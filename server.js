@@ -1,17 +1,42 @@
 require('dotenv').config();
 const express = require('express');
 const compression = require('compression');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const bcrypt = require('bcryptjs');
 const path = require('path');
 const crypto = require('crypto');
 const { db, initDB } = require('./database');
 
 const app = express();
 
+// 安全標頭（CSP、X-Frame-Options 等）
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
+      imgSrc: ["'self'", "data:", "https://*.tile.openstreetmap.org", "https://unpkg.com"],
+      connectSrc: ["'self'"],
+    },
+  },
+}));
+
 // Gzip 壓縮（減少 60-70% 傳輸量）
 app.use(compression());
 
 // JSON body parser
 app.use(express.json());
+
+// 登入/註冊/忘記密碼速率限制（每 IP 15 分鐘內最多 15 次）
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: '嘗試次數過多，請 15 分鐘後再試' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ====== 工具函式 ======
 function getTaiwanTime() {
@@ -25,8 +50,31 @@ function getTaiwanTime() {
   return { date: `${y}-${m}-${d}`, time: `${hh}:${mm}` };
 }
 
-function hashPassword(password) {
+// 密碼雜湊（bcrypt，cost factor 12）
+async function hashPassword(password) {
+  return bcrypt.hash(password, 12);
+}
+
+// 驗證密碼（支援 bcrypt 和舊版 SHA-256 自動遷移）
+function sha256(password) {
   return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+async function verifyPassword(password, hash) {
+  // 新格式：bcrypt hash 以 $2 開頭
+  if (hash.startsWith('$2')) {
+    return bcrypt.compare(password, hash);
+  }
+  // 舊格式：SHA-256（64 字元 hex）— 驗證後自動升級
+  return sha256(password) === hash;
+}
+
+async function upgradePasswordIfNeeded(userId, password, currentHash) {
+  // 如果還是舊的 SHA-256 格式，升級為 bcrypt
+  if (!currentHash.startsWith('$2')) {
+    const newHash = await hashPassword(password);
+    await db.execute({ sql: 'UPDATE users SET password_hash = ? WHERE user_id = ?', args: [newHash, userId] });
+  }
 }
 
 // ====== Session 管理 ======
@@ -115,7 +163,7 @@ app.get('/api/health', (req, res) => {
 // ====== 帳號 API ======
 
 // 註冊
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', authLimiter, async (req, res) => {
   const { username, password, displayName } = req.body;
   if (!username || !password || !displayName) {
     return res.status(400).json({ error: '請填寫所有欄位' });
@@ -129,15 +177,14 @@ app.post('/api/register', async (req, res) => {
 
   const userId = username.trim();
   const name = displayName.trim();
-  const pwHash = hashPassword(password);
 
   try {
-    // 檢查帳號是否已存在
     const existing = await db.execute({ sql: 'SELECT user_id FROM users WHERE user_id = ?', args: [userId] });
     if (existing.rows.length > 0) {
       return res.status(400).json({ error: '此帳號已被使用' });
     }
 
+    const pwHash = await hashPassword(password);
     await db.execute({
       sql: 'INSERT INTO users (user_id, display_name, group_id, password_hash, role) VALUES (?, ?, ?, ?, ?)',
       args: [userId, name, 'web', pwHash, 'user'],
@@ -152,7 +199,7 @@ app.post('/api/register', async (req, res) => {
 });
 
 // 登入
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', authLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: '請輸入帳號和密碼' });
@@ -165,9 +212,13 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: '帳號或密碼錯誤' });
     }
 
-    if (user.password_hash !== hashPassword(password)) {
+    const valid = await verifyPassword(password, user.password_hash);
+    if (!valid) {
       return res.status(401).json({ error: '帳號或密碼錯誤' });
     }
+
+    // 自動將舊 SHA-256 密碼升級為 bcrypt
+    await upgradePasswordIfNeeded(user.user_id, password, user.password_hash);
 
     const token = createSession(user.user_id, user.display_name, user.role || 'user');
     res.json({ success: true, token, displayName: user.display_name, role: user.role || 'user' });
@@ -202,7 +253,7 @@ app.post('/api/users/:userId/reset-password', requireAdmin, async (req, res) => 
     const user = await db.execute({ sql: 'SELECT user_id FROM users WHERE user_id = ?', args: [userId] });
     if (user.rows.length === 0) return res.status(404).json({ error: '找不到此使用者' });
 
-    const pwHash = hashPassword(newPassword);
+    const pwHash = await hashPassword(newPassword);
     await db.execute({ sql: 'UPDATE users SET password_hash = ? WHERE user_id = ?', args: [pwHash, userId] });
     res.json({ success: true });
   } catch (err) {
@@ -212,7 +263,7 @@ app.post('/api/users/:userId/reset-password', requireAdmin, async (req, res) => 
 });
 
 // 使用者自助重設密碼（帳號 + 姓名驗證）
-app.post('/api/forgot-password', async (req, res) => {
+app.post('/api/forgot-password', authLimiter, async (req, res) => {
   const { username, displayName, newPassword } = req.body;
   if (!username || !displayName || !newPassword) {
     return res.status(400).json({ error: '請填寫所有欄位' });
@@ -233,7 +284,7 @@ app.post('/api/forgot-password', async (req, res) => {
       return res.status(400).json({ error: '帳號或姓名不正確' });
     }
 
-    const pwHash = hashPassword(newPassword);
+    const pwHash = await hashPassword(newPassword);
     await db.execute({ sql: 'UPDATE users SET password_hash = ? WHERE user_id = ?', args: [pwHash, username.trim()] });
     res.json({ success: true, message: '密碼已重設，請用新密碼登入' });
   } catch (err) {
@@ -801,8 +852,122 @@ app.delete('/api/users/:userId', requireAdmin, async (req, res) => {
   }
 });
 
+// 使用者修改自己的密碼
+app.post('/api/change-password', requireAuth, async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) return res.status(400).json({ error: '請填寫所有欄位' });
+  if (newPassword.length < 4) return res.status(400).json({ error: '新密碼至少 4 個字元' });
+
+  try {
+    const result = await db.execute({ sql: 'SELECT password_hash FROM users WHERE user_id = ?', args: [req.session.userId] });
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: '使用者不存在' });
+
+    const valid = await verifyPassword(oldPassword, user.password_hash);
+    if (!valid) return res.status(400).json({ error: '目前密碼不正確' });
+
+    const pwHash = await hashPassword(newPassword);
+    await db.execute({ sql: 'UPDATE users SET password_hash = ? WHERE user_id = ?', args: [pwHash, req.session.userId] });
+    res.json({ success: true, message: '密碼已修改' });
+  } catch (err) {
+    console.error('修改密碼失敗:', err);
+    res.status(500).json({ error: '修改失敗' });
+  }
+});
+
+// 全員最後位置（所有登入使用者可看）
+app.get('/api/last-locations', requireAuth, async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: `SELECT r.user_id, r.display_name, r.report_date, r.report_time,
+              r.location, r.task_type, r.gps_latitude, r.gps_longitude
+            FROM reports r
+            INNER JOIN (
+              SELECT user_id, MAX(created_at) as max_created
+              FROM reports
+              WHERE gps_latitude IS NOT NULL
+              GROUP BY user_id
+            ) latest ON r.user_id = latest.user_id AND r.created_at = latest.max_created
+            WHERE r.gps_latitude IS NOT NULL
+            ORDER BY r.display_name`,
+      args: [],
+    });
+    res.json(result.rows);
+  } catch (err) {
+    console.error('查詢最後位置失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
+});
+
+// 人員回報狀態面板（主管/管理員用）
+app.get('/api/status-board', requireAuth, async (req, res) => {
+  const { role, userId } = req.session;
+  const tw = getTaiwanTime();
+  const today = tw.date;
+
+  try {
+    // 取得使用者清單（依權限篩選）
+    let userSql = 'SELECT user_id, display_name, group_id, is_supervisor, role FROM users WHERE 1=1';
+    const userParams = [];
+
+    if (role !== 'admin') {
+      const userInfo = await db.execute({ sql: 'SELECT group_id, is_supervisor FROM users WHERE user_id = ?', args: [userId] });
+      const u = userInfo.rows[0];
+      if (u && u.is_supervisor && u.group_id && u.group_id !== 'web') {
+        userSql += ' AND group_id = ?';
+        userParams.push(u.group_id);
+      } else {
+        return res.status(403).json({ error: '需要主管或管理員權限' });
+      }
+    }
+
+    userSql += ' ORDER BY display_name';
+    const users = await db.execute({ sql: userSql, args: userParams });
+
+    // 取得每人最後一筆回報
+    const statusList = [];
+    for (const u of users.rows) {
+      const lastReport = await db.execute({
+        sql: `SELECT report_date, report_time, task_type, location, task_description,
+                gps_latitude, gps_longitude
+              FROM reports WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`,
+        args: [u.user_id],
+      });
+
+      const todayCount = await db.execute({
+        sql: 'SELECT COUNT(*) as c FROM reports WHERE user_id = ? AND report_date = ?',
+        args: [u.user_id, today],
+      });
+
+      const lr = lastReport.rows[0] || null;
+      statusList.push({
+        user_id: u.user_id,
+        display_name: u.display_name,
+        is_supervisor: u.is_supervisor,
+        role: u.role,
+        today_count: todayCount.rows[0].c,
+        reported_today: todayCount.rows[0].c > 0,
+        last_report: lr ? {
+          date: lr.report_date,
+          time: lr.report_time,
+          type: lr.task_type,
+          location: lr.location,
+          task: lr.task_description,
+          lat: lr.gps_latitude,
+          lng: lr.gps_longitude,
+        } : null,
+      });
+    }
+
+    res.json({ today, users: statusList });
+  } catch (err) {
+    console.error('查詢狀態面板失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
+});
+
 // 匯出 CSV
-app.get('/api/export', async (req, res) => {
+app.get('/api/export', requireAdmin, async (req, res) => {
   const { startDate, endDate } = req.query;
 
   let sql = 'SELECT * FROM reports WHERE 1=1';
@@ -838,15 +1003,22 @@ app.get('/', (req, res) => {
   res.redirect('/report.html');
 });
 
+// ====== 全域錯誤處理 ======
+app.use((err, req, res, next) => {
+  console.error('未捕獲的錯誤:', err);
+  res.status(500).json({ error: '伺服器內部錯誤，請稍後再試' });
+});
+
 // ====== 啟動伺服器 ======
+let server;
+
 async function startServer() {
-  // 初始化資料庫表
   await initDB();
 
   // 自動建立預設管理員帳號（如果不存在）
   const adminResult = await db.execute({ sql: 'SELECT user_id FROM users WHERE role = ?', args: ['admin'] });
   if (adminResult.rows.length === 0) {
-    const pwHash = hashPassword('admin123');
+    const pwHash = await hashPassword('admin123');
     await db.execute({
       sql: 'INSERT OR IGNORE INTO users (user_id, display_name, group_id, password_hash, role) VALUES (?, ?, ?, ?, ?)',
       args: ['admin', '管理員', 'web', pwHash, 'admin'],
@@ -855,12 +1027,30 @@ async function startServer() {
   }
 
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
+  server = app.listen(PORT, () => {
     console.log(`伺服器啟動於 http://localhost:${PORT}`);
     console.log(`回報頁面: http://localhost:${PORT}/report.html`);
     console.log(`管理後台: http://localhost:${PORT}/admin`);
   });
 }
+
+// ====== Graceful Shutdown ======
+function gracefulShutdown(signal) {
+  console.log(`收到 ${signal}，正在優雅關閉...`);
+  if (server) {
+    server.close(() => {
+      console.log('伺服器已關閉');
+      process.exit(0);
+    });
+    // 強制 10 秒後關閉
+    setTimeout(() => { process.exit(1); }, 10000);
+  } else {
+    process.exit(0);
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 startServer().catch(err => {
   console.error('啟動失敗:', err);

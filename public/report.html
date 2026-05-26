@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#06c755">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <title>工作動態回報</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -667,7 +673,10 @@
     <div class="form-container">
       <div class="user-bar">
         <span class="ub-name">👤 <strong id="current-user-label">-</strong></span>
-        <button onclick="doLogout()">登出</button>
+        <div style="display:flex;gap:6px">
+          <button onclick="openChangePwModal()">修改密碼</button>
+          <button onclick="doLogout()">登出</button>
+        </div>
       </div>
 
       <div class="today-count" id="today-count" style="display:none">
@@ -709,6 +718,9 @@
       <button class="nav-item active" id="nav-report" onclick="switchTab('form')">
         <span class="nav-icon">📝</span>回報
       </button>
+      <button class="nav-item" id="nav-map" onclick="switchTab('map')">
+        <span class="nav-icon">🗺️</span>同事位置
+      </button>
       <button class="nav-item" id="nav-records" onclick="switchTab('records')">
         <span class="nav-icon">📋</span>我的紀錄
       </button>
@@ -746,9 +758,50 @@
       <button class="nav-item" id="nav-report2" onclick="switchTab('form')">
         <span class="nav-icon">📝</span>回報
       </button>
+      <button class="nav-item" id="nav-map2" onclick="switchTab('map')">
+        <span class="nav-icon">🗺️</span>同事位置
+      </button>
       <button class="nav-item active" id="nav-records2" onclick="switchTab('records')">
         <span class="nav-icon">📋</span>我的紀錄
       </button>
+    </div>
+  </div>
+
+  <!-- ====== 同事位置地圖 ====== -->
+  <div class="screen" id="map-screen">
+    <div class="header">
+      <h1>同事位置</h1>
+      <div class="sub">查看同事最後回報的位置</div>
+    </div>
+    <div style="padding:0;position:relative">
+      <div id="team-map" style="height:calc(100vh - 140px);width:100%;z-index:1"></div>
+      <button onclick="loadTeamMap()" style="position:absolute;top:10px;right:10px;z-index:400;background:#06c755;color:white;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2)">🔄 重新整理</button>
+    </div>
+    <div class="bottom-nav">
+      <button class="nav-item" onclick="switchTab('form')"><span class="nav-icon">📝</span>回報</button>
+      <button class="nav-item active" onclick="switchTab('map')"><span class="nav-icon">🗺️</span>同事位置</button>
+      <button class="nav-item" onclick="switchTab('records')"><span class="nav-icon">📋</span>我的紀錄</button>
+    </div>
+  </div>
+
+  <!-- ====== 修改密碼彈窗 ====== -->
+  <div class="modal-overlay" id="changepw-modal">
+    <div class="modal-box">
+      <div class="modal-title">修改密碼</div>
+      <div class="auth-error" id="changepw-error"></div>
+      <div id="changepw-success" style="display:none;background:#e8f5e9;color:#2e7d32;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;text-align:center"></div>
+      <div class="modal-field">
+        <label>目前密碼</label>
+        <input type="password" id="changepw-old" placeholder="輸入目前密碼" />
+      </div>
+      <div class="modal-field">
+        <label>新密碼</label>
+        <input type="password" id="changepw-new" placeholder="至少 4 個字元" />
+      </div>
+      <div class="modal-btns">
+        <button class="modal-btn-cancel" onclick="closeChangePwModal()">取消</button>
+        <button class="modal-btn-save" id="changepw-btn" onclick="doChangePassword()">確認修改</button>
+      </div>
     </div>
   </div>
 
@@ -879,7 +932,7 @@
         }
         authToken = data.token;
         localStorage.setItem('authToken', authToken);
-        currentUser = { displayName: data.displayName, role: data.role };
+        currentUser = { userId: data.userId || '', displayName: data.displayName, role: data.role };
         enterFormScreen();
       } catch (e) {
         errEl.textContent = '網路錯誤，請重試';
@@ -920,7 +973,7 @@
         }
         authToken = data.token;
         localStorage.setItem('authToken', authToken);
-        currentUser = { displayName: data.displayName, role: data.role };
+        currentUser = { userId: data.userId || '', displayName: data.displayName, role: data.role };
         enterFormScreen();
       } catch (e) {
         errEl.textContent = '網路錯誤，請重試';
@@ -1014,7 +1067,7 @@
           return;
         }
         const data = await res.json();
-        currentUser = { displayName: data.displayName, role: data.role };
+        currentUser = { userId: data.userId || '', displayName: data.displayName, role: data.role };
         enterFormScreen();
       } catch (e) {
         showScreen('login-screen');
@@ -1174,6 +1227,9 @@
       if (tab === 'form') {
         showScreen('form-screen');
         updateDateTime();
+      } else if (tab === 'map') {
+        showScreen('map-screen');
+        loadTeamMap();
       } else if (tab === 'records') {
         showScreen('records-screen');
         document.getElementById('records-user-label').textContent = currentUser.displayName;
@@ -1181,6 +1237,111 @@
         loadMyRecords();
       }
     }
+
+    // ====== 同事位置地圖 ======
+    let teamMap = null;
+    let teamMarkers = [];
+
+    async function loadTeamMap() {
+      if (!teamMap) {
+        teamMap = L.map('team-map').setView([25.033, 121.565], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap',
+          maxZoom: 18,
+        }).addTo(teamMap);
+      }
+      // 清除舊標記
+      teamMarkers.forEach(m => teamMap.removeLayer(m));
+      teamMarkers = [];
+
+      try {
+        const res = await fetch('/api/last-locations', {
+          headers: { 'Authorization': 'Bearer ' + authToken },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data.length === 0) return;
+
+        const bounds = [];
+        data.forEach(p => {
+          if (!p.gps_latitude || !p.gps_longitude) return;
+          const lat = Number(p.gps_latitude);
+          const lng = Number(p.gps_longitude);
+          bounds.push([lat, lng]);
+
+          const isMe = currentUser && p.user_id === currentUser.userId;
+          const icon = L.divIcon({
+            className: '',
+            html: `<div style="background:${isMe ? '#4a90d9' : '#06c755'};color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">${(p.display_name || '?')[0]}</div>`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+          });
+
+          const marker = L.marker([lat, lng], { icon }).addTo(teamMap);
+          marker.bindPopup(`
+            <div style="font-family:-apple-system,sans-serif;min-width:150px">
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">${p.display_name || '未知'}${isMe ? ' (我)' : ''}</div>
+              <div style="font-size:12px;color:#666;margin-bottom:2px">📅 ${p.report_date} ${p.report_time}</div>
+              <div style="font-size:12px;color:#666;margin-bottom:2px">📋 ${p.task_type || ''}</div>
+              <div style="font-size:12px;color:#666">📍 ${p.location || ''}</div>
+            </div>
+          `);
+          teamMarkers.push(marker);
+        });
+
+        if (bounds.length > 0) {
+          teamMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
+        }
+
+        // 修正 Leaflet 在 display:none 後顯示的 tile 問題
+        setTimeout(() => teamMap.invalidateSize(), 200);
+      } catch (e) {
+        console.error('載入同事位置失敗:', e);
+      }
+    }
+
+    // ====== 修改密碼 ======
+    function openChangePwModal() {
+      document.getElementById('changepw-old').value = '';
+      document.getElementById('changepw-new').value = '';
+      document.getElementById('changepw-error').classList.remove('show');
+      document.getElementById('changepw-success').style.display = 'none';
+      document.getElementById('changepw-modal').classList.add('show');
+    }
+    function closeChangePwModal() {
+      document.getElementById('changepw-modal').classList.remove('show');
+    }
+    async function doChangePassword() {
+      const oldPw = document.getElementById('changepw-old').value;
+      const newPw = document.getElementById('changepw-new').value;
+      const errEl = document.getElementById('changepw-error');
+      const successEl = document.getElementById('changepw-success');
+      errEl.classList.remove('show');
+      successEl.style.display = 'none';
+
+      if (!oldPw || !newPw) { errEl.textContent = '請填寫所有欄位'; errEl.classList.add('show'); return; }
+      if (newPw.length < 4) { errEl.textContent = '新密碼至少 4 個字元'; errEl.classList.add('show'); return; }
+
+      const btn = document.getElementById('changepw-btn');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+          body: JSON.stringify({ oldPassword: oldPw, newPassword: newPw }),
+        });
+        const data = await res.json();
+        if (!res.ok) { errEl.textContent = data.error; errEl.classList.add('show'); btn.disabled = false; return; }
+        successEl.textContent = '✅ 密碼已修改成功！';
+        successEl.style.display = 'block';
+        setTimeout(() => closeChangePwModal(), 1500);
+      } catch (e) { errEl.textContent = '網路錯誤'; errEl.classList.add('show'); }
+      btn.disabled = false;
+    }
+    document.getElementById('changepw-modal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('changepw-modal')) closeChangePwModal();
+    });
 
     // ====== 載入我的紀錄 ======
     async function loadMyRecords() {
@@ -1317,6 +1478,11 @@
 
     // 啟動
     checkAuth();
+
+    // PWA Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   </script>
 </body>
 </html>

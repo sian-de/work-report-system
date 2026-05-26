@@ -315,6 +315,33 @@
     .assign-bar select { padding: 8px 12px; border: 2px solid #e8e8e8; border-radius: 8px; font-size: 13px; flex: 1; }
     .assign-bar button { padding: 8px 14px; }
 
+    /* 回報狀態面板 */
+    .status-card {
+      background: white; border-radius: 12px; padding: 16px 18px; margin-bottom: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 12px;
+      border-left: 4px solid #ccc;
+    }
+    .status-card.reported { border-left-color: #06c755; }
+    .status-card.not-reported { border-left-color: #e53935; }
+    .status-avatar {
+      width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 15px; color: white; flex-shrink: 0;
+    }
+    .status-avatar.reported { background: #06c755; }
+    .status-avatar.not-reported { background: #e0e0e0; color: #999; }
+    .status-info { flex: 1; min-width: 0; }
+    .status-name { font-weight: 600; font-size: 15px; color: #333; }
+    .status-detail { font-size: 12px; color: #888; margin-top: 2px; }
+    .status-count { font-size: 20px; font-weight: 700; text-align: center; min-width: 40px; }
+    .status-count.reported { color: #06c755; }
+    .status-count.not-reported { color: #e0e0e0; }
+    .status-summary-card {
+      background: white; border-radius: 12px; padding: 14px 20px; text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-width: 100px;
+    }
+    .status-summary-card .ss-value { font-size: 28px; font-weight: 700; }
+    .status-summary-card .ss-label { font-size: 12px; color: #888; }
+
     /* 登入表單 */
     .login-prompt {
       display: flex;
@@ -490,6 +517,7 @@
         <button class="tab-btn" onclick="switchTab('users')">👥 人員管理</button>
         <button class="tab-btn" onclick="switchTab('types')" id="tab-btn-types" style="display:none">🏷️ 類型管理</button>
         <button class="tab-btn" onclick="switchTab('groups')" id="tab-btn-groups" style="display:none">🏢 分組管理</button>
+        <button class="tab-btn" onclick="switchTab('status')" id="tab-btn-status" style="display:none">📊 回報狀態</button>
       </div>
 
       <!-- 回報紀錄頁籤 -->
@@ -587,6 +615,17 @@
         </div>
         <div id="group-list"></div>
       </div>
+
+      <!-- 回報狀態面板 -->
+      <div class="tab-content" id="tab-status">
+        <div class="mgmt-header">
+          <h2>人員回報狀態</h2>
+          <button class="btn-add" onclick="loadStatusBoard()">🔄 重新整理</button>
+        </div>
+        <div id="status-date" style="font-size:14px;color:#888;margin-bottom:14px"></div>
+        <div id="status-summary" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
+        <div id="status-list"></div>
+      </div>
     </div>
   </div>
 
@@ -661,6 +700,8 @@
         document.getElementById('tab-btn-types').style.display = '';
         document.getElementById('tab-btn-groups').style.display = '';
       }
+      // 管理員和主管都能看回報狀態
+      document.getElementById('tab-btn-status').style.display = '';
 
       loadTaskTypesForAdmin();
       loadSummary();
@@ -696,6 +737,7 @@
       if (tab === 'users') loadUsers();
       if (tab === 'types') loadAllTaskTypes();
       if (tab === 'groups') loadGroups();
+      if (tab === 'status') loadStatusBoard();
     }
 
     // ====== 工具 ======
@@ -1234,6 +1276,62 @@
         loadGroupMembers(groupId);
         loadGroups();
       } catch (e) { alert('網路錯誤'); }
+    }
+
+    // ====== 回報狀態面板 ======
+    async function loadStatusBoard() {
+      const list = document.getElementById('status-list');
+      list.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>載入中...</p></div>';
+
+      try {
+        const res = await fetch('/api/status-board', { headers: authHeaders() });
+        if (!res.ok) {
+          const d = await res.json();
+          list.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>${d.error || '載入失敗'}</p></div>`;
+          return;
+        }
+        const data = await res.json();
+        document.getElementById('status-date').textContent = `📅 ${data.today}`;
+
+        const reported = data.users.filter(u => u.reported_today);
+        const notReported = data.users.filter(u => !u.reported_today);
+        const totalCount = data.users.reduce((s, u) => s + u.today_count, 0);
+
+        document.getElementById('status-summary').innerHTML = `
+          <div class="status-summary-card"><div class="ss-value" style="color:#06c755">${reported.length}</div><div class="ss-label">已回報</div></div>
+          <div class="status-summary-card"><div class="ss-value" style="color:#e53935">${notReported.length}</div><div class="ss-label">未回報</div></div>
+          <div class="status-summary-card"><div class="ss-value" style="color:#4a90d9">${totalCount}</div><div class="ss-label">總筆數</div></div>
+          <div class="status-summary-card"><div class="ss-value" style="color:#ff9800">${data.users.length > 0 ? Math.round(reported.length / data.users.length * 100) : 0}%</div><div class="ss-label">回報率</div></div>
+        `;
+
+        // 排序：未回報的排前面
+        const sorted = [...notReported, ...reported];
+
+        list.innerHTML = sorted.map(u => {
+          const isReported = u.reported_today;
+          const lr = u.last_report;
+          let detailHtml = '';
+          if (lr) {
+            detailHtml = `最後回報：${lr.date} ${lr.time}　📋 ${escHtml(lr.type || '')}　📍 ${escHtml(lr.location || '')}`;
+          } else {
+            detailHtml = '從未回報';
+          }
+
+          return `
+            <div class="status-card ${isReported ? 'reported' : 'not-reported'}">
+              <div class="status-avatar ${isReported ? 'reported' : 'not-reported'}">${(u.display_name || '?')[0]}</div>
+              <div class="status-info">
+                <div class="status-name">${escHtml(u.display_name)}
+                  ${u.is_supervisor ? '<span class="role-badge role-supervisor" style="font-size:10px;padding:1px 6px;margin-left:4px">主管</span>' : ''}
+                </div>
+                <div class="status-detail">${detailHtml}</div>
+              </div>
+              <div class="status-count ${isReported ? 'reported' : 'not-reported'}">${u.today_count}</div>
+            </div>`;
+        }).join('');
+      } catch (e) {
+        list.innerHTML = '<div class="empty-state"><div class="icon">❌</div><p>載入失敗</p></div>';
+      }
     }
 
     // ====== 後台登入 ======
