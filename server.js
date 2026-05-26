@@ -191,6 +191,57 @@ app.post('/api/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// 管理員重設密碼
+app.post('/api/users/:userId/reset-password', requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const { newPassword } = req.body;
+  if (!newPassword || newPassword.length < 4) {
+    return res.status(400).json({ error: '新密碼至少 4 個字元' });
+  }
+  try {
+    const user = await db.execute({ sql: 'SELECT user_id FROM users WHERE user_id = ?', args: [userId] });
+    if (user.rows.length === 0) return res.status(404).json({ error: '找不到此使用者' });
+
+    const pwHash = hashPassword(newPassword);
+    await db.execute({ sql: 'UPDATE users SET password_hash = ? WHERE user_id = ?', args: [pwHash, userId] });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('重設密碼失敗:', err);
+    res.status(500).json({ error: '重設失敗' });
+  }
+});
+
+// 使用者自助重設密碼（帳號 + 姓名驗證）
+app.post('/api/forgot-password', async (req, res) => {
+  const { username, displayName, newPassword } = req.body;
+  if (!username || !displayName || !newPassword) {
+    return res.status(400).json({ error: '請填寫所有欄位' });
+  }
+  if (newPassword.length < 4) {
+    return res.status(400).json({ error: '新密碼至少 4 個字元' });
+  }
+
+  try {
+    const result = await db.execute({
+      sql: 'SELECT user_id, display_name FROM users WHERE user_id = ?',
+      args: [username.trim()],
+    });
+    const user = result.rows[0];
+
+    // 驗證帳號 + 姓名是否匹配
+    if (!user || user.display_name !== displayName.trim()) {
+      return res.status(400).json({ error: '帳號或姓名不正確' });
+    }
+
+    const pwHash = hashPassword(newPassword);
+    await db.execute({ sql: 'UPDATE users SET password_hash = ? WHERE user_id = ?', args: [pwHash, username.trim()] });
+    res.json({ success: true, message: '密碼已重設，請用新密碼登入' });
+  } catch (err) {
+    console.error('自助重設密碼失敗:', err);
+    res.status(500).json({ error: '重設失敗，請稍後再試' });
+  }
+});
+
 // ====== 事項類型 API ======
 
 // 取得啟用的類型（前端用，快取 60 秒）

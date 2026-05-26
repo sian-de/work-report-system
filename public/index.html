@@ -858,6 +858,9 @@
             roleBadge = '<span class="role-badge role-user">一般</span>';
           }
           const groupName = u.group_name || (u.group_id && u.group_id !== 'web' ? u.group_id : '<span style="color:#ccc">未分組</span>');
+          const resetBtn = (isAdmin && u.user_id !== 'admin')
+            ? `<button class="btn" style="background:#fff3e0;color:#e65100;font-size:12px;padding:6px 10px" onclick="resetPassword('${escAttr(u.user_id)}', '${escAttr(u.display_name)}')">重設密碼</button>`
+            : '';
           const deleteBtn = (isAdmin && u.user_id !== 'admin')
             ? `<button class="btn btn-danger" onclick="deleteUser('${escAttr(u.user_id)}', '${escAttr(u.display_name)}')">刪除</button>`
             : (u.user_id === 'admin' ? '-' : '<span style="color:#ccc;font-size:12px">需管理員權限</span>');
@@ -867,7 +870,7 @@
             <td>${groupName}</td>
             <td>${roleBadge}</td>
             <td style="font-size:13px;color:#888">${u.created_at || '-'}</td>
-            <td>${deleteBtn}</td>
+            <td style="display:flex;gap:4px;flex-wrap:wrap">${resetBtn}${deleteBtn}</td>
           </tr>`;
         }).join('');
       } catch (e) {}
@@ -881,6 +884,21 @@
         if (!res.ok) { alert(data.error || '刪除失敗'); return; }
         loadUsers();
         loadSummary();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    async function resetPassword(userId, displayName) {
+      const newPw = prompt(`為「${displayName}」設定新密碼：\n（至少 4 個字元）`);
+      if (!newPw) return;
+      if (newPw.length < 4) { alert('密碼至少 4 個字元'); return; }
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/reset-password', {
+          method: 'POST', headers: jsonHeaders(),
+          body: JSON.stringify({ newPassword: newPw }),
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || '重設失敗'); return; }
+        alert(`已成功重設「${displayName}」的密碼`);
       } catch (e) { alert('網路錯誤'); }
     }
 

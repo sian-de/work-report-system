@@ -573,6 +573,9 @@
         <div class="auth-switch">
           還沒有帳號？<a onclick="showScreen('register-screen')">註冊新帳號</a>
         </div>
+        <div class="auth-switch" style="margin-top:8px">
+          <a onclick="showScreen('forgot-screen')">忘記密碼？</a>
+        </div>
       </div>
       <div style="text-align:center;margin-top:16px">
         <a href="/admin/" style="color:#06c755;text-decoration:none;font-size:13px">管理後台 →</a>
@@ -605,6 +608,40 @@
         <button class="auth-btn" id="reg-btn" onclick="doRegister()">註冊</button>
         <div class="auth-switch">
           已有帳號？<a onclick="showScreen('login-screen')">回到登入</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 忘記密碼畫面 ====== -->
+  <div class="screen" id="forgot-screen">
+    <div class="header">
+      <h1>工作動態回報</h1>
+      <div class="sub">重設你的密碼</div>
+    </div>
+    <div class="auth-screen">
+      <div class="auth-card">
+        <div class="auth-title">忘記密碼</div>
+        <div style="font-size:13px;color:#888;margin-bottom:16px;text-align:center;line-height:1.5">
+          請輸入你的帳號和註冊時的姓名進行驗證，驗證通過後即可設定新密碼。
+        </div>
+        <div class="auth-error" id="forgot-error"></div>
+        <div id="forgot-success" style="display:none;background:#e8f5e9;color:#2e7d32;padding:12px;border-radius:8px;font-size:14px;margin-bottom:14px;text-align:center"></div>
+        <div class="auth-field">
+          <label>帳號</label>
+          <input type="text" id="forgot-username" placeholder="輸入你的帳號" autocomplete="username" />
+        </div>
+        <div class="auth-field">
+          <label>姓名（須與註冊時一致）</label>
+          <input type="text" id="forgot-displayname" placeholder="輸入你的姓名" />
+        </div>
+        <div class="auth-field">
+          <label>新密碼</label>
+          <input type="password" id="forgot-newpw" placeholder="至少 4 個字元" autocomplete="new-password" />
+        </div>
+        <button class="auth-btn" id="forgot-btn" onclick="doForgotPassword()">重設密碼</button>
+        <div class="auth-switch">
+          <a onclick="showScreen('login-screen')">← 回到登入</a>
         </div>
       </div>
     </div>
@@ -885,6 +922,54 @@
         localStorage.setItem('authToken', authToken);
         currentUser = { displayName: data.displayName, role: data.role };
         enterFormScreen();
+      } catch (e) {
+        errEl.textContent = '網路錯誤，請重試';
+        errEl.classList.add('show');
+      }
+      btn.disabled = false;
+    }
+
+    // ====== 忘記密碼 ======
+    async function doForgotPassword() {
+      const username = document.getElementById('forgot-username').value.trim();
+      const displayName = document.getElementById('forgot-displayname').value.trim();
+      const newPassword = document.getElementById('forgot-newpw').value;
+      const errEl = document.getElementById('forgot-error');
+      const successEl = document.getElementById('forgot-success');
+      errEl.classList.remove('show');
+      successEl.style.display = 'none';
+
+      if (!username || !displayName || !newPassword) {
+        errEl.textContent = '請填寫所有欄位';
+        errEl.classList.add('show');
+        return;
+      }
+      if (newPassword.length < 4) {
+        errEl.textContent = '新密碼至少 4 個字元';
+        errEl.classList.add('show');
+        return;
+      }
+
+      const btn = document.getElementById('forgot-btn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, displayName, newPassword }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errEl.textContent = data.error;
+          errEl.classList.add('show');
+          btn.disabled = false;
+          return;
+        }
+        successEl.textContent = '✅ 密碼已重設成功！請用新密碼登入。';
+        successEl.style.display = 'block';
+        // 2 秒後自動跳回登入
+        setTimeout(() => showScreen('login-screen'), 2000);
       } catch (e) {
         errEl.textContent = '網路錯誤，請重試';
         errEl.classList.add('show');
