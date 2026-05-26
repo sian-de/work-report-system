@@ -1,10 +1,14 @@
 require('dotenv').config();
 const express = require('express');
+const compression = require('compression');
 const path = require('path');
 const crypto = require('crypto');
 const { db, initDB } = require('./database');
 
 const app = express();
+
+// Gzip 壓縮（減少 60-70% 傳輸量）
+app.use(compression());
 
 // JSON body parser
 app.use(express.json());
@@ -70,9 +74,43 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// ====== 靜態檔案 ======
-app.use('/admin', express.static(path.join(__dirname, 'public')));
-app.use('/report.html', express.static(path.join(__dirname, 'public', 'report.html')));
+// ====== 記憶體快取工具 ======
+const apiCache = new Map();
+
+function cached(key, ttlSeconds, fetchFn) {
+  return async (req, res, next) => {
+    const cacheKey = typeof key === 'function' ? key(req) : key;
+    const now = Date.now();
+    const entry = apiCache.get(cacheKey);
+    if (entry && now - entry.time < ttlSeconds * 1000) {
+      return res.json(entry.data);
+    }
+    // 把原始 res.json 包裝起來，攔截結果存入快取
+    const originalJson = res.json.bind(res);
+    res.json = (data) => {
+      apiCache.set(cacheKey, { data, time: now });
+      return originalJson(data);
+    };
+    next();
+  };
+}
+
+// 定期清理過期快取
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of apiCache) {
+    if (now - val.time > 300000) apiCache.delete(key); // 5 分鐘最大存活
+  }
+}, 60000);
+
+// ====== 靜態檔案（含快取標頭）======
+app.use('/admin', express.static(path.join(__dirname, 'public'), { maxAge: '1h', etag: true }));
+app.use('/report.html', express.static(path.join(__dirname, 'public', 'report.html'), { maxAge: '10m', etag: true }));
+
+// ====== 健康檢查（供 UptimeRobot 保活）======
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
 
 // ====== 帳號 API ======
 
@@ -287,8 +325,8 @@ app.get('/api/trajectory', requireAuth, async (req, res) => {
   }
 });
 
-// 取得有 GPS 資料的使用者列表
-app.get('/api/gps-users', requireAuth, async (req, res) => {
+// 取得有 GPS 資料的使用者列表（快取 120 秒）
+app.get('/api/gps-users', requireAuth, cached('gps-users', 120, null), async (req, res) => {
   try {
     const result = await db.execute({
       sql: `SELECT DISTINCT r.user_id, r.display_name, COUNT(*) as report_count,
@@ -304,19 +342,22 @@ app.get('/api/gps-users', requireAuth, async (req, res) => {
   }
 });
 
-// 取得今日摘要
-app.get('/api/summary', requireAuth, async (req, res) => {
+// 取得今日摘要（快取 60 秒 + 批次查詢）
+app.get('/api/summary', requireAuth, cached('summary', 60, null), async (req, res) => {
   const tw = getTaiwanTime();
   const today = tw.date;
 
   try {
-    const r1 = await db.execute({ sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ?', args: [today] });
-    const r2 = await db.execute({ sql: 'SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ?', args: [today] });
-    const r3 = await db.execute({ sql: 'SELECT COUNT(*) as count FROM users', args: [] });
+    // 用 batch 一次送出 3 個查詢，減少網路來回
+    const results = await db.batch([
+      { sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ?', args: [today] },
+      { sql: 'SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ?', args: [today] },
+      { sql: 'SELECT COUNT(*) as count FROM users', args: [] },
+    ]);
 
-    const totalReports = r1.rows[0].count;
-    const totalUsers = r2.rows[0].count;
-    const allUsers = r3.rows[0].count;
+    const totalReports = results[0].rows[0].count;
+    const totalUsers = results[1].rows[0].count;
+    const allUsers = results[2].rows[0].count;
 
     res.json({
       today, totalReports, totalUsers, allUsers,
@@ -328,8 +369,8 @@ app.get('/api/summary', requireAuth, async (req, res) => {
   }
 });
 
-// 取得所有使用者
-app.get('/api/users', requireAuth, async (req, res) => {
+// 取得所有使用者（快取 60 秒）
+app.get('/api/users', requireAuth, cached('users', 60, null), async (req, res) => {
   try {
     const result = await db.execute({
       sql: 'SELECT user_id, display_name, role, created_at FROM users ORDER BY display_name',
