@@ -191,6 +191,242 @@ app.post('/api/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// ====== 事項類型 API ======
+
+// 取得啟用的類型（前端用，快取 60 秒）
+app.get('/api/task-types', requireAuth, cached('task-types', 60, null), async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: 'SELECT id, name, emoji, sort_order FROM task_types WHERE is_active = 1 ORDER BY sort_order ASC, id ASC',
+      args: [],
+    });
+    res.json(result.rows);
+  } catch (err) {
+    console.error('查詢類型失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
+});
+
+// 取得所有類型（管理用）
+app.get('/api/task-types/all', requireAdmin, async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: 'SELECT * FROM task_types ORDER BY sort_order ASC, id ASC',
+      args: [],
+    });
+    res.json(result.rows);
+  } catch (err) {
+    console.error('查詢所有類型失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
+});
+
+// 新增類型
+app.post('/api/task-types', requireAdmin, async (req, res) => {
+  const { name, emoji } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: '名稱不能為空' });
+
+  try {
+    // 取得最大排序值
+    const maxOrder = await db.execute({ sql: 'SELECT MAX(sort_order) as m FROM task_types', args: [] });
+    const nextOrder = (maxOrder.rows[0].m || 0) + 1;
+
+    await db.execute({
+      sql: 'INSERT INTO task_types (name, emoji, sort_order) VALUES (?, ?, ?)',
+      args: [name.trim(), emoji || '📌', nextOrder],
+    });
+    apiCache.delete('task-types');
+    res.json({ success: true });
+  } catch (err) {
+    if (err.message?.includes('UNIQUE')) return res.status(400).json({ error: '此類型名稱已存在' });
+    console.error('新增類型失敗:', err);
+    res.status(500).json({ error: '新增失敗' });
+  }
+});
+
+// 修改類型
+app.put('/api/task-types/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { name, emoji, sort_order, is_active } = req.body;
+
+  try {
+    const existing = await db.execute({ sql: 'SELECT * FROM task_types WHERE id = ?', args: [Number(id)] });
+    if (existing.rows.length === 0) return res.status(404).json({ error: '找不到此類型' });
+
+    const updates = [];
+    const args = [];
+    if (name !== undefined) { updates.push('name = ?'); args.push(name.trim()); }
+    if (emoji !== undefined) { updates.push('emoji = ?'); args.push(emoji); }
+    if (sort_order !== undefined) { updates.push('sort_order = ?'); args.push(Number(sort_order)); }
+    if (is_active !== undefined) { updates.push('is_active = ?'); args.push(is_active ? 1 : 0); }
+
+    if (updates.length === 0) return res.status(400).json({ error: '沒有要修改的欄位' });
+
+    args.push(Number(id));
+    await db.execute({ sql: `UPDATE task_types SET ${updates.join(', ')} WHERE id = ?`, args });
+    apiCache.delete('task-types');
+    res.json({ success: true });
+  } catch (err) {
+    if (err.message?.includes('UNIQUE')) return res.status(400).json({ error: '此類型名稱已存在' });
+    console.error('修改類型失敗:', err);
+    res.status(500).json({ error: '修改失敗' });
+  }
+});
+
+// 刪除類型
+app.delete('/api/task-types/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const existing = await db.execute({ sql: 'SELECT name FROM task_types WHERE id = ?', args: [Number(id)] });
+    if (existing.rows.length === 0) return res.status(404).json({ error: '找不到此類型' });
+
+    // 檢查是否有回報使用此類型
+    const used = await db.execute({
+      sql: 'SELECT COUNT(*) as c FROM reports WHERE task_type = ?',
+      args: [existing.rows[0].name],
+    });
+    if (used.rows[0].c > 0) {
+      return res.status(400).json({ error: `此類型已有 ${used.rows[0].c} 筆回報使用，建議停用而非刪除` });
+    }
+
+    await db.execute({ sql: 'DELETE FROM task_types WHERE id = ?', args: [Number(id)] });
+    apiCache.delete('task-types');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('刪除類型失敗:', err);
+    res.status(500).json({ error: '刪除失敗' });
+  }
+});
+
+// ====== 群組 API ======
+
+// 取得所有群組（含成員統計）
+app.get('/api/groups', requireAuth, async (req, res) => {
+  try {
+    const groups = await db.execute({
+      sql: `SELECT g.*,
+              (SELECT COUNT(*) FROM users u WHERE u.group_id = CAST(g.id AS TEXT)) as member_count,
+              (SELECT u.display_name FROM users u WHERE u.group_id = CAST(g.id AS TEXT) AND u.is_supervisor = 1 LIMIT 1) as supervisor_name
+            FROM groups g ORDER BY g.name`,
+      args: [],
+    });
+    res.json(groups.rows);
+  } catch (err) {
+    console.error('查詢群組失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
+});
+
+// 取得群組成員
+app.get('/api/groups/:id/members', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const members = await db.execute({
+      sql: 'SELECT user_id, display_name, is_supervisor, role, created_at FROM users WHERE group_id = ? ORDER BY is_supervisor DESC, display_name',
+      args: [String(id)],
+    });
+    res.json(members.rows);
+  } catch (err) {
+    console.error('查詢群組成員失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
+});
+
+// 建立群組
+app.post('/api/groups', requireAdmin, async (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: '群組名稱不能為空' });
+
+  try {
+    await db.execute({ sql: 'INSERT INTO groups (name) VALUES (?)', args: [name.trim()] });
+    res.json({ success: true });
+  } catch (err) {
+    if (err.message?.includes('UNIQUE')) return res.status(400).json({ error: '此群組名稱已存在' });
+    console.error('建立群組失敗:', err);
+    res.status(500).json({ error: '建立失敗' });
+  }
+});
+
+// 修改群組名稱
+app.put('/api/groups/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: '群組名稱不能為空' });
+
+  try {
+    const existing = await db.execute({ sql: 'SELECT * FROM groups WHERE id = ?', args: [Number(id)] });
+    if (existing.rows.length === 0) return res.status(404).json({ error: '找不到此群組' });
+
+    await db.execute({ sql: 'UPDATE groups SET name = ? WHERE id = ?', args: [name.trim(), Number(id)] });
+    res.json({ success: true });
+  } catch (err) {
+    if (err.message?.includes('UNIQUE')) return res.status(400).json({ error: '此群組名稱已存在' });
+    console.error('修改群組失敗:', err);
+    res.status(500).json({ error: '修改失敗' });
+  }
+});
+
+// 刪除群組
+app.delete('/api/groups/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const members = await db.execute({
+      sql: 'SELECT COUNT(*) as c FROM users WHERE group_id = ?',
+      args: [String(id)],
+    });
+    if (members.rows[0].c > 0) {
+      return res.status(400).json({ error: `此群組還有 ${members.rows[0].c} 位成員，請先移除所有成員` });
+    }
+
+    await db.execute({ sql: 'DELETE FROM groups WHERE id = ?', args: [Number(id)] });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('刪除群組失敗:', err);
+    res.status(500).json({ error: '刪除失敗' });
+  }
+});
+
+// 指派使用者到群組（或移除）
+app.put('/api/users/:userId/group', requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const { groupId, isSupervisor } = req.body;
+
+  try {
+    const user = await db.execute({ sql: 'SELECT * FROM users WHERE user_id = ?', args: [userId] });
+    if (user.rows.length === 0) return res.status(404).json({ error: '找不到此使用者' });
+
+    // groupId 為 null 或空字串表示移除群組
+    const newGroupId = groupId ? String(groupId) : null;
+    const newSupervisor = isSupervisor ? 1 : 0;
+
+    await db.execute({
+      sql: 'UPDATE users SET group_id = ?, is_supervisor = ? WHERE user_id = ?',
+      args: [newGroupId, newSupervisor, userId],
+    });
+    apiCache.delete('users');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('指派群組失敗:', err);
+    res.status(500).json({ error: '指派失敗' });
+  }
+});
+
+// 取得未分組的使用者
+app.get('/api/users/unassigned', requireAuth, async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: `SELECT user_id, display_name FROM users
+            WHERE (group_id IS NULL OR group_id = '' OR group_id = 'web') AND role != 'admin'
+            ORDER BY display_name`,
+      args: [],
+    });
+    res.json(result.rows);
+  } catch (err) {
+    console.error('查詢未分組使用者失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
+});
+
 // ====== 回報 API ======
 
 // 提交回報
@@ -243,6 +479,24 @@ app.get('/api/reports', requireAuth, async (req, res) => {
   let sql = 'SELECT * FROM reports WHERE 1=1';
   let countSql = 'SELECT COUNT(*) as total FROM reports WHERE 1=1';
   const params = [];
+
+  // 主管只能看到自己組內成員的回報（admin 可看全部）
+  const { role, userId } = req.session;
+  if (role !== 'admin') {
+    const userInfo = await db.execute({ sql: 'SELECT group_id, is_supervisor FROM users WHERE user_id = ?', args: [userId] });
+    const u = userInfo.rows[0];
+    if (u && u.is_supervisor && u.group_id && u.group_id !== 'web') {
+      // 主管：只看同組成員
+      sql += ' AND user_id IN (SELECT user_id FROM users WHERE group_id = ?)';
+      countSql += ' AND user_id IN (SELECT user_id FROM users WHERE group_id = ?)';
+      params.push(u.group_id);
+    } else {
+      // 一般使用者：只看自己的
+      sql += ' AND user_id = ?';
+      countSql += ' AND user_id = ?';
+      params.push(userId);
+    }
+  }
 
   if (date) { sql += ' AND report_date = ?'; countSql += ' AND report_date = ?'; params.push(date); }
   if (user) { sql += ' AND (display_name LIKE ? OR user_id = ?)'; countSql += ' AND (display_name LIKE ? OR user_id = ?)'; params.push(`%${user}%`, user); }
@@ -342,27 +596,69 @@ app.get('/api/gps-users', requireAuth, cached('gps-users', 120, null), async (re
   }
 });
 
-// 取得今日摘要（快取 60 秒 + 批次查詢）
-app.get('/api/summary', requireAuth, cached('summary', 60, null), async (req, res) => {
+// 取得今日摘要（快取依角色分開）
+app.get('/api/summary', requireAuth, async (req, res) => {
   const tw = getTaiwanTime();
   const today = tw.date;
+  const { role, userId } = req.session;
+
+  // 主管用不同快取 key
+  let cacheKey = 'summary';
+  let groupFilter = null;
+
+  if (role !== 'admin') {
+    const userInfo = await db.execute({ sql: 'SELECT group_id, is_supervisor FROM users WHERE user_id = ?', args: [userId] });
+    const u = userInfo.rows[0];
+    if (u && u.is_supervisor && u.group_id && u.group_id !== 'web') {
+      groupFilter = u.group_id;
+      cacheKey = `summary-group-${groupFilter}`;
+    } else {
+      // 一般使用者看自己的統計
+      cacheKey = `summary-user-${userId}`;
+    }
+  }
+
+  // 檢查快取
+  const now = Date.now();
+  const entry = apiCache.get(cacheKey);
+  if (entry && now - entry.time < 60000) {
+    return res.json(entry.data);
+  }
 
   try {
-    // 用 batch 一次送出 3 個查詢，減少網路來回
-    const results = await db.batch([
-      { sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ?', args: [today] },
-      { sql: 'SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ?', args: [today] },
-      { sql: 'SELECT COUNT(*) as count FROM users', args: [] },
-    ]);
+    let data;
+    if (role === 'admin') {
+      const results = await db.batch([
+        { sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ?', args: [today] },
+        { sql: 'SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ?', args: [today] },
+        { sql: 'SELECT COUNT(*) as count FROM users', args: [] },
+      ]);
+      const totalReports = results[0].rows[0].count;
+      const totalUsers = results[1].rows[0].count;
+      const allUsers = results[2].rows[0].count;
+      data = { today, totalReports, totalUsers, allUsers, reportRate: allUsers > 0 ? Math.round((totalUsers / allUsers) * 100) : 0 };
+    } else if (groupFilter) {
+      // 主管：只統計組內
+      const results = await db.batch([
+        { sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ? AND user_id IN (SELECT user_id FROM users WHERE group_id = ?)', args: [today, groupFilter] },
+        { sql: 'SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ? AND user_id IN (SELECT user_id FROM users WHERE group_id = ?)', args: [today, groupFilter] },
+        { sql: 'SELECT COUNT(*) as count FROM users WHERE group_id = ?', args: [groupFilter] },
+      ]);
+      const totalReports = results[0].rows[0].count;
+      const totalUsers = results[1].rows[0].count;
+      const allUsers = results[2].rows[0].count;
+      data = { today, totalReports, totalUsers, allUsers, reportRate: allUsers > 0 ? Math.round((totalUsers / allUsers) * 100) : 0 };
+    } else {
+      // 一般使用者
+      const result = await db.execute({
+        sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ? AND user_id = ?',
+        args: [today, userId],
+      });
+      data = { today, totalReports: result.rows[0].count, totalUsers: result.rows[0].count > 0 ? 1 : 0, allUsers: 1, reportRate: result.rows[0].count > 0 ? 100 : 0 };
+    }
 
-    const totalReports = results[0].rows[0].count;
-    const totalUsers = results[1].rows[0].count;
-    const allUsers = results[2].rows[0].count;
-
-    res.json({
-      today, totalReports, totalUsers, allUsers,
-      reportRate: allUsers > 0 ? Math.round((totalUsers / allUsers) * 100) : 0,
-    });
+    apiCache.set(cacheKey, { data, time: now });
+    res.json(data);
   } catch (err) {
     console.error('查詢摘要失敗:', err);
     res.status(500).json({ error: '查詢失敗' });
@@ -373,7 +669,11 @@ app.get('/api/summary', requireAuth, cached('summary', 60, null), async (req, re
 app.get('/api/users', requireAuth, cached('users', 60, null), async (req, res) => {
   try {
     const result = await db.execute({
-      sql: 'SELECT user_id, display_name, role, created_at FROM users ORDER BY display_name',
+      sql: `SELECT u.user_id, u.display_name, u.role, u.group_id, u.is_supervisor, u.created_at,
+              g.name as group_name
+            FROM users u
+            LEFT JOIN groups g ON u.group_id = CAST(g.id AS TEXT)
+            ORDER BY u.display_name`,
       args: [],
     });
     res.json(result.rows);

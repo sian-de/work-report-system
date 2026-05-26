@@ -593,25 +593,8 @@
 
       <div class="input-group">
         <div class="input-label">📋 事項類型 <span class="required">*必選</span></div>
-        <div class="type-grid">
-          <button class="type-btn" onclick="selectType(this, '跑法院')">
-            <span class="type-icon">⚖️</span>跑法院
-          </button>
-          <button class="type-btn" onclick="selectType(this, '拜訪對照')">
-            <span class="type-icon">🤝</span>拜訪對照
-          </button>
-          <button class="type-btn" onclick="selectType(this, '對照和解')">
-            <span class="type-icon">📝</span>對照和解
-          </button>
-          <button class="type-btn" onclick="selectType(this, '跑警察局')">
-            <span class="type-icon">🏛️</span>跑警察局
-          </button>
-          <button class="type-btn" onclick="selectType(this, '到站找駕駛')">
-            <span class="type-icon">🚌</span>到站找駕駛
-          </button>
-          <button class="type-btn" onclick="selectType(this, '其他')">
-            <span class="type-icon">📌</span>其他
-          </button>
+        <div class="type-grid" id="type-grid">
+          <!-- 動態載入事項類型 -->
         </div>
       </div>
 
@@ -685,12 +668,7 @@
       <div class="modal-field">
         <label>事項類型</label>
         <select id="edit-type">
-          <option value="跑法院">跑法院</option>
-          <option value="拜訪對照">拜訪對照</option>
-          <option value="對照和解">對照和解</option>
-          <option value="跑警察局">跑警察局</option>
-          <option value="到站找駕駛">到站找駕駛</option>
-          <option value="其他">其他</option>
+          <!-- 動態載入事項類型 -->
         </select>
       </div>
       <div class="modal-field">
@@ -735,6 +713,42 @@
     let gpsLat = null, gpsLng = null, selectedType = '';
     let authToken = localStorage.getItem('authToken') || '';
     let currentUser = null;
+    let taskTypes = []; // 從 API 載入
+
+    // ====== 載入事項類型 ======
+    async function loadTaskTypes() {
+      try {
+        const res = await fetch('/api/task-types', {
+          headers: { 'Authorization': 'Bearer ' + authToken },
+        });
+        if (!res.ok) return;
+        taskTypes = await res.json();
+        renderTypeButtons();
+        renderEditTypeOptions();
+      } catch (e) {
+        console.error('載入類型失敗:', e);
+      }
+    }
+
+    function renderTypeButtons() {
+      const grid = document.getElementById('type-grid');
+      if (!taskTypes.length) {
+        grid.innerHTML = '<div style="color:#999;font-size:13px;padding:8px">載入中...</div>';
+        return;
+      }
+      grid.innerHTML = taskTypes.map(t =>
+        `<button class="type-btn" onclick="selectType(this, '${t.name.replace(/'/g, "\\'")}')">
+          <span class="type-icon">${t.emoji || '📌'}</span>${t.name}
+        </button>`
+      ).join('');
+    }
+
+    function renderEditTypeOptions() {
+      const sel = document.getElementById('edit-type');
+      sel.innerHTML = taskTypes.map(t =>
+        `<option value="${t.name}">${t.emoji || '📌'} ${t.name}</option>`
+      ).join('');
+    }
 
     // ====== 畫面切換 ======
     function showScreen(id) {
@@ -843,6 +857,7 @@
       updateDateTime();
       getGPS();
       loadTodayCount();
+      loadTaskTypes();
     }
 
     // ====== 自動檢查登入狀態 ======

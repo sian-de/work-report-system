@@ -270,6 +270,50 @@
     }
     .role-admin { background: #fff3e0; color: #e65100; }
     .role-user { background: #e8f5e9; color: #2e7d32; }
+    .role-supervisor { background: #e3f2fd; color: #1565c0; }
+
+    /* 類型管理 & 分組管理 */
+    .mgmt-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .mgmt-header h2 { font-size: 18px; color: #333; }
+    .btn-add { background: linear-gradient(135deg, #06c755, #04a847); color: white; border: none; border-radius: 10px; padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn-add:hover { opacity: 0.9; }
+
+    .type-item, .group-card {
+      background: white; border-radius: 12px; padding: 16px 20px; margin-bottom: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 12px;
+      transition: box-shadow 0.2s;
+    }
+    .type-item:hover, .group-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+    .type-emoji { font-size: 24px; width: 36px; text-align: center; }
+    .type-name { flex: 1; font-weight: 600; font-size: 15px; color: #333; }
+    .type-order { font-size: 12px; color: #999; min-width: 50px; text-align: center; }
+    .type-status { font-size: 12px; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+    .type-active { background: #e8f5e9; color: #2e7d32; }
+    .type-inactive { background: #fce4ec; color: #c62828; }
+    .type-actions { display: flex; gap: 6px; }
+    .type-actions button { border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-weight: 500; }
+    .btn-toggle { background: #fff3e0; color: #e65100; }
+    .btn-move { background: #f0f0f0; color: #555; font-size: 14px; padding: 4px 8px; }
+
+    .group-info { flex: 1; }
+    .group-name { font-weight: 700; font-size: 16px; color: #333; }
+    .group-meta { font-size: 12px; color: #888; margin-top: 2px; }
+    .group-actions { display: flex; gap: 6px; }
+    .group-members { background: #f8f9fa; border-radius: 10px; padding: 14px 18px; margin: -4px 0 10px 0; }
+    .member-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eee; }
+    .member-row:last-child { border-bottom: none; }
+    .member-name { flex: 1; font-size: 14px; }
+    .member-actions button { border: none; border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
+
+    .add-form { background: white; border-radius: 12px; padding: 18px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: none; }
+    .add-form.show { display: block; }
+    .add-form-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .add-form-row input, .add-form-row select { padding: 10px 14px; border: 2px solid #e8e8e8; border-radius: 10px; font-size: 14px; }
+    .add-form-row input:focus, .add-form-row select:focus { outline: none; border-color: #06c755; }
+
+    .assign-bar { display: flex; gap: 8px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd; }
+    .assign-bar select { padding: 8px 12px; border: 2px solid #e8e8e8; border-radius: 8px; font-size: 13px; flex: 1; }
+    .assign-bar button { padding: 8px 14px; }
 
     /* 登入表單 */
     .login-prompt {
@@ -363,9 +407,11 @@
     </div>
 
     <div class="container">
-      <div class="tabs">
+      <div class="tabs" id="admin-tabs">
         <button class="tab-btn active" onclick="switchTab('reports')">📊 回報紀錄</button>
         <button class="tab-btn" onclick="switchTab('users')">👥 人員管理</button>
+        <button class="tab-btn" onclick="switchTab('types')" id="tab-btn-types" style="display:none">🏷️ 類型管理</button>
+        <button class="tab-btn" onclick="switchTab('groups')" id="tab-btn-groups" style="display:none">🏢 分組管理</button>
       </div>
 
       <!-- 回報紀錄頁籤 -->
@@ -420,6 +466,7 @@
               <tr>
                 <th>帳號</th>
                 <th>姓名</th>
+                <th>群組</th>
                 <th>角色</th>
                 <th>建立時間</th>
                 <th>操作</th>
@@ -428,6 +475,39 @@
             <tbody id="user-tbody"></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- 類型管理頁籤 -->
+      <div class="tab-content" id="tab-types">
+        <div class="mgmt-header">
+          <h2>事項類型管理</h2>
+          <button class="btn-add" onclick="toggleAddTypeForm()">+ 新增類型</button>
+        </div>
+        <div class="add-form" id="add-type-form">
+          <div class="add-form-row">
+            <input type="text" id="new-type-emoji" placeholder="Emoji" style="width:70px;text-align:center;font-size:20px" maxlength="4" />
+            <input type="text" id="new-type-name" placeholder="類型名稱" style="flex:1" />
+            <button class="btn btn-primary" onclick="addTaskType()">新增</button>
+            <button class="btn btn-secondary" onclick="toggleAddTypeForm()">取消</button>
+          </div>
+        </div>
+        <div id="type-list"></div>
+      </div>
+
+      <!-- 分組管理頁籤 -->
+      <div class="tab-content" id="tab-groups">
+        <div class="mgmt-header">
+          <h2>分組管理</h2>
+          <button class="btn-add" onclick="toggleAddGroupForm()">+ 新增群組</button>
+        </div>
+        <div class="add-form" id="add-group-form">
+          <div class="add-form-row">
+            <input type="text" id="new-group-name" placeholder="群組名稱" style="flex:1" />
+            <button class="btn btn-primary" onclick="addGroup()">新增</button>
+            <button class="btn btn-secondary" onclick="toggleAddGroupForm()">取消</button>
+          </div>
+        </div>
+        <div id="group-list"></div>
       </div>
     </div>
   </div>
@@ -440,12 +520,7 @@
       <div class="modal-field">
         <label>事項類型</label>
         <select id="edit-type">
-          <option value="跑法院">⚖️ 跑法院</option>
-          <option value="拜訪對照">🤝 拜訪對照</option>
-          <option value="對照和解">📝 對照和解</option>
-          <option value="跑警察局">🏛️ 跑警察局</option>
-          <option value="到站找駕駛">🚌 到站找駕駛</option>
-          <option value="其他">📌 其他</option>
+          <!-- 動態載入 -->
         </select>
       </div>
       <div class="modal-field">
@@ -468,9 +543,14 @@
     let authToken = localStorage.getItem('authToken') || '';
     let currentUser = null;
     let autoRefreshTimer = null;
+    let typeEmojiMap = {};  // 動態從 API 建立
+    let expandedGroup = null; // 目前展開的群組
 
     function authHeaders() {
       return { 'Authorization': 'Bearer ' + authToken };
+    }
+    function jsonHeaders() {
+      return { 'Content-Type': 'application/json', ...authHeaders() };
     }
 
     // ====== 登入驗證 ======
@@ -497,9 +577,16 @@
       document.getElementById('nav-user').textContent = currentUser.displayName;
       document.getElementById('today-date').textContent = formatDate(new Date());
       document.getElementById('filter-date').value = formatDate(new Date());
+
+      // 管理員才顯示類型管理和分組管理頁籤
+      if (currentUser.role === 'admin') {
+        document.getElementById('tab-btn-types').style.display = '';
+        document.getElementById('tab-btn-groups').style.display = '';
+      }
+
+      loadTaskTypesForAdmin();
       loadSummary();
       loadReports();
-      // 自動更新（每 30 秒）
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
       autoRefreshTimer = setInterval(() => {
         loadSummary();
@@ -516,13 +603,21 @@
     }
 
     // ====== 頁籤 ======
+    const tabNames = ['reports', 'users', 'types', 'groups'];
     function switchTab(tab) {
-      document.querySelectorAll('.tab-btn').forEach((b, i) => {
-        b.classList.toggle('active', (tab === 'reports' && i === 0) || (tab === 'users' && i === 1));
-      });
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      // 找到對應按鈕
+      const btns = document.querySelectorAll('.tab-btn');
+      btns.forEach(b => {
+        if (b.textContent.includes(tab === 'reports' ? '回報紀錄' : tab === 'users' ? '人員管理' : tab === 'types' ? '類型管理' : '分組管理')) {
+          b.classList.add('active');
+        }
+      });
       document.getElementById('tab-' + tab).classList.add('active');
       if (tab === 'users') loadUsers();
+      if (tab === 'types') loadAllTaskTypes();
+      if (tab === 'groups') loadGroups();
     }
 
     // ====== 工具 ======
@@ -536,6 +631,25 @@
     function escHtml(str) {
       if (!str) return '';
       return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    }
+
+    function escAttr(s) {
+      if (!s) return '';
+      return s.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // ====== 載入事項類型（前端用） ======
+    async function loadTaskTypesForAdmin() {
+      try {
+        const res = await fetch('/api/task-types', { headers: authHeaders() });
+        if (!res.ok) return;
+        const types = await res.json();
+        typeEmojiMap = {};
+        types.forEach(t => { typeEmojiMap[t.name] = t.emoji || '📌'; });
+        // 更新編輯彈窗選項
+        const sel = document.getElementById('edit-type');
+        sel.innerHTML = types.map(t => `<option value="${escHtml(t.name)}">${t.emoji || '📌'} ${escHtml(t.name)}</option>`).join('');
+      } catch (e) {}
     }
 
     // ====== 回報紀錄 ======
@@ -578,12 +692,10 @@
           grouped[key].push(r);
         });
 
-        const typeEmoji = {'跑法院':'⚖️','拜訪對照':'🤝','對照和解':'📝','跑警察局':'🏛️','到站找駕駛':'🚌','其他':'📌'};
-
         list.innerHTML = Object.entries(grouped).map(([name, items]) => {
           const initial = name[0];
           const itemsHtml = items.map((r, i) => {
-            const emoji = typeEmoji[r.task_type] || '📌';
+            const emoji = typeEmojiMap[r.task_type] || '📌';
             const gpsHtml = r.gps_latitude
               ? `<a class="gps-link" href="https://maps.google.com/?q=${r.gps_latitude},${r.gps_longitude}" target="_blank">📍 地圖</a>`
               : '';
@@ -659,15 +771,22 @@
         const isAdmin = currentUser && currentUser.role === 'admin';
 
         tbody.innerHTML = users.map(u => {
-          const roleBadge = u.role === 'admin'
-            ? '<span class="role-badge role-admin">管理員</span>'
-            : '<span class="role-badge role-user">一般</span>';
+          let roleBadge = '';
+          if (u.role === 'admin') {
+            roleBadge = '<span class="role-badge role-admin">管理員</span>';
+          } else if (u.is_supervisor) {
+            roleBadge = '<span class="role-badge role-supervisor">主管</span>';
+          } else {
+            roleBadge = '<span class="role-badge role-user">一般</span>';
+          }
+          const groupName = u.group_name || (u.group_id && u.group_id !== 'web' ? u.group_id : '<span style="color:#ccc">未分組</span>');
           const deleteBtn = (isAdmin && u.user_id !== 'admin')
             ? `<button class="btn btn-danger" onclick="deleteUser('${escAttr(u.user_id)}', '${escAttr(u.display_name)}')">刪除</button>`
             : (u.user_id === 'admin' ? '-' : '<span style="color:#ccc;font-size:12px">需管理員權限</span>');
           return `<tr>
             <td>${escHtml(u.user_id)}</td>
             <td><strong>${escHtml(u.display_name)}</strong></td>
+            <td>${groupName}</td>
             <td>${roleBadge}</td>
             <td style="font-size:13px;color:#888">${u.created_at || '-'}</td>
             <td>${deleteBtn}</td>
@@ -678,24 +797,13 @@
 
     async function deleteUser(userId, displayName) {
       if (!confirm(`確定要刪除「${displayName}」嗎？\n\n此操作會同時刪除該人員的所有回報紀錄，無法復原！`)) return;
-
       try {
-        const res = await fetch('/api/users/' + encodeURIComponent(userId), {
-          method: 'DELETE',
-          headers: authHeaders(),
-        });
+        const res = await fetch('/api/users/' + encodeURIComponent(userId), { method: 'DELETE', headers: authHeaders() });
         const data = await res.json();
         if (!res.ok) { alert(data.error || '刪除失敗'); return; }
         loadUsers();
         loadSummary();
-      } catch (e) {
-        alert('網路錯誤');
-      }
-    }
-
-    function escAttr(s) {
-      if (!s) return '';
-      return s.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      } catch (e) { alert('網路錯誤'); }
     }
 
     // ====== 編輯回報 ======
@@ -716,47 +824,321 @@
       const taskType = document.getElementById('edit-type').value;
       const location = document.getElementById('edit-location').value.trim();
       const task = document.getElementById('edit-task').value.trim();
-
       if (!location || !task) { alert('地點和處理內容不能為空'); return; }
 
       const btn = document.getElementById('edit-save-btn');
-      btn.disabled = true;
-      btn.textContent = '儲存中...';
-
+      btn.disabled = true; btn.textContent = '儲存中...';
       try {
-        const res = await fetch('/api/reports/' + id, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify({ taskType, location, task }),
-        });
+        const res = await fetch('/api/reports/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ taskType, location, task }) });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '修改失敗'); return; }
+        if (!res.ok) { alert(data.error || '修改失敗'); btn.disabled = false; btn.textContent = '儲存'; return; }
         closeEditModal();
         loadReports(currentPage);
-      } catch (e) {
-        alert('網路錯誤');
-      }
-      btn.disabled = false;
-      btn.textContent = '儲存';
+      } catch (e) { alert('網路錯誤'); }
+      btn.disabled = false; btn.textContent = '儲存';
     }
 
     async function deleteReport(id) {
       if (!confirm('確定要刪除這筆回報紀錄嗎？此操作無法復原！')) return;
       try {
-        const res = await fetch('/api/reports/' + id, {
-          method: 'DELETE',
-          headers: authHeaders(),
-        });
+        const res = await fetch('/api/reports/' + id, { method: 'DELETE', headers: authHeaders() });
         if (!res.ok) { const d = await res.json(); alert(d.error || '刪除失敗'); return; }
         loadReports(currentPage);
         loadSummary();
       } catch (e) { alert('網路錯誤'); }
     }
 
-    // 點擊背景關閉彈窗
     document.getElementById('edit-modal').addEventListener('click', (e) => {
       if (e.target === document.getElementById('edit-modal')) closeEditModal();
     });
+
+    // ====== 類型管理 ======
+    function toggleAddTypeForm() {
+      document.getElementById('add-type-form').classList.toggle('show');
+      document.getElementById('new-type-emoji').value = '📌';
+      document.getElementById('new-type-name').value = '';
+    }
+
+    async function loadAllTaskTypes() {
+      try {
+        const res = await fetch('/api/task-types/all', { headers: authHeaders() });
+        if (!res.ok) return;
+        const types = await res.json();
+        const list = document.getElementById('type-list');
+
+        if (types.length === 0) {
+          list.innerHTML = '<div class="empty-state"><div class="icon">🏷️</div><p>尚無事項類型</p></div>';
+          return;
+        }
+
+        list.innerHTML = types.map((t, i) => `
+          <div class="type-item" data-id="${t.id}">
+            <span class="type-emoji">${t.emoji || '📌'}</span>
+            <span class="type-name">${escHtml(t.name)}</span>
+            <span class="type-order">#${t.sort_order}</span>
+            <span class="type-status ${t.is_active ? 'type-active' : 'type-inactive'}">${t.is_active ? '啟用' : '停用'}</span>
+            <div class="type-actions">
+              <button class="btn-move" onclick="moveType(${t.id}, 'up')" ${i === 0 ? 'disabled style="opacity:0.3"' : ''}>▲</button>
+              <button class="btn-move" onclick="moveType(${t.id}, 'down')" ${i === types.length - 1 ? 'disabled style="opacity:0.3"' : ''}>▼</button>
+              <button class="btn-toggle" onclick="toggleType(${t.id}, ${t.is_active ? 0 : 1})">${t.is_active ? '停用' : '啟用'}</button>
+              <button class="btn-edit" onclick="editTypeName(${t.id}, '${escAttr(t.name)}', '${escAttr(t.emoji)}')">編輯</button>
+              <button class="btn-del-report" onclick="deleteType(${t.id}, '${escAttr(t.name)}')">刪除</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {}
+    }
+
+    async function addTaskType() {
+      const emoji = document.getElementById('new-type-emoji').value.trim() || '📌';
+      const name = document.getElementById('new-type-name').value.trim();
+      if (!name) { alert('請輸入類型名稱'); return; }
+      try {
+        const res = await fetch('/api/task-types', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name, emoji }) });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || '新增失敗'); return; }
+        toggleAddTypeForm();
+        loadAllTaskTypes();
+        loadTaskTypesForAdmin();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    async function toggleType(id, newActive) {
+      try {
+        const res = await fetch('/api/task-types/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ is_active: newActive }) });
+        if (!res.ok) { const d = await res.json(); alert(d.error || '修改失敗'); return; }
+        loadAllTaskTypes();
+        loadTaskTypesForAdmin();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    async function moveType(id, direction) {
+      // 取得所有類型重新排序
+      try {
+        const res = await fetch('/api/task-types/all', { headers: authHeaders() });
+        if (!res.ok) return;
+        const types = await res.json();
+        const idx = types.findIndex(t => t.id === id);
+        if (idx < 0) return;
+        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+        if (swapIdx < 0 || swapIdx >= types.length) return;
+
+        // 交換 sort_order
+        const orderA = types[idx].sort_order;
+        const orderB = types[swapIdx].sort_order;
+        await Promise.all([
+          fetch('/api/task-types/' + types[idx].id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ sort_order: orderB }) }),
+          fetch('/api/task-types/' + types[swapIdx].id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ sort_order: orderA }) }),
+        ]);
+        loadAllTaskTypes();
+        loadTaskTypesForAdmin();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    function editTypeName(id, currentName, currentEmoji) {
+      const newName = prompt('修改類型名稱：', currentName);
+      if (!newName || newName.trim() === currentName) return;
+      const newEmoji = prompt('修改 Emoji：', currentEmoji);
+      fetch('/api/task-types/' + id, {
+        method: 'PUT', headers: jsonHeaders(),
+        body: JSON.stringify({ name: newName.trim(), emoji: newEmoji || currentEmoji }),
+      }).then(r => r.json()).then(d => {
+        if (d.error) { alert(d.error); return; }
+        loadAllTaskTypes();
+        loadTaskTypesForAdmin();
+      }).catch(() => alert('網路錯誤'));
+    }
+
+    async function deleteType(id, name) {
+      if (!confirm(`確定要刪除類型「${name}」嗎？`)) return;
+      try {
+        const res = await fetch('/api/task-types/' + id, { method: 'DELETE', headers: authHeaders() });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || '刪除失敗'); return; }
+        loadAllTaskTypes();
+        loadTaskTypesForAdmin();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    // ====== 分組管理 ======
+    function toggleAddGroupForm() {
+      document.getElementById('add-group-form').classList.toggle('show');
+      document.getElementById('new-group-name').value = '';
+    }
+
+    async function loadGroups() {
+      try {
+        const res = await fetch('/api/groups', { headers: authHeaders() });
+        if (!res.ok) return;
+        const groups = await res.json();
+        const list = document.getElementById('group-list');
+
+        if (groups.length === 0) {
+          list.innerHTML = '<div class="empty-state"><div class="icon">🏢</div><p>尚無群組，點擊上方按鈕新增</p></div>';
+          return;
+        }
+
+        list.innerHTML = groups.map(g => `
+          <div>
+            <div class="group-card" onclick="toggleGroupMembers(${g.id})" style="cursor:pointer">
+              <div class="group-info">
+                <div class="group-name">${escHtml(g.name)}</div>
+                <div class="group-meta">👥 ${g.member_count || 0} 位成員${g.supervisor_name ? '　👤 主管：' + escHtml(g.supervisor_name) : ''}</div>
+              </div>
+              <div class="group-actions" onclick="event.stopPropagation()">
+                <button class="btn-edit" onclick="editGroupName(${g.id}, '${escAttr(g.name)}')">編輯</button>
+                <button class="btn-del-report" onclick="deleteGroup(${g.id}, '${escAttr(g.name)}')">刪除</button>
+              </div>
+            </div>
+            <div class="group-members" id="group-members-${g.id}" style="display:none"></div>
+          </div>
+        `).join('');
+
+        // 如果之前有展開的群組，重新展開
+        if (expandedGroup) {
+          const el = document.getElementById('group-members-' + expandedGroup);
+          if (el) { el.style.display = 'block'; loadGroupMembers(expandedGroup); }
+        }
+      } catch (e) {}
+    }
+
+    async function toggleGroupMembers(groupId) {
+      const el = document.getElementById('group-members-' + groupId);
+      if (!el) return;
+      if (el.style.display === 'block') {
+        el.style.display = 'none';
+        expandedGroup = null;
+        return;
+      }
+      // 關閉其他
+      document.querySelectorAll('.group-members').forEach(m => m.style.display = 'none');
+      el.style.display = 'block';
+      expandedGroup = groupId;
+      loadGroupMembers(groupId);
+    }
+
+    async function loadGroupMembers(groupId) {
+      const el = document.getElementById('group-members-' + groupId);
+      el.innerHTML = '載入中...';
+      try {
+        const [membersRes, unassignedRes] = await Promise.all([
+          fetch('/api/groups/' + groupId + '/members', { headers: authHeaders() }),
+          fetch('/api/users/unassigned', { headers: authHeaders() }),
+        ]);
+        const members = await membersRes.json();
+        const unassigned = await unassignedRes.json();
+
+        let html = '';
+        if (members.length === 0) {
+          html = '<div style="color:#999;font-size:13px;padding:4px 0">此群組尚無成員</div>';
+        } else {
+          html = members.map(m => `
+            <div class="member-row">
+              <span class="member-name">
+                <strong>${escHtml(m.display_name)}</strong>
+                <span style="color:#999;font-size:12px;margin-left:4px">(${escHtml(m.user_id)})</span>
+                ${m.is_supervisor ? '<span class="role-badge role-supervisor" style="margin-left:6px">主管</span>' : ''}
+              </span>
+              <div class="member-actions">
+                <button style="background:${m.is_supervisor ? '#fce4ec' : '#e3f2fd'};color:${m.is_supervisor ? '#c62828' : '#1565c0'}"
+                  onclick="setSuper('${escAttr(m.user_id)}', ${groupId}, ${m.is_supervisor ? 0 : 1})">
+                  ${m.is_supervisor ? '取消主管' : '設為主管'}
+                </button>
+                <button style="background:#fce4ec;color:#c62828" onclick="removeMember('${escAttr(m.user_id)}', ${groupId})">移除</button>
+              </div>
+            </div>
+          `).join('');
+        }
+
+        // 指派新成員
+        if (unassigned.length > 0) {
+          html += `
+            <div class="assign-bar">
+              <select id="assign-select-${groupId}">
+                <option value="">選擇成員加入...</option>
+                ${unassigned.map(u => `<option value="${escHtml(u.user_id)}">${escHtml(u.display_name)} (${escHtml(u.user_id)})</option>`).join('')}
+              </select>
+              <button class="btn btn-primary" style="padding:8px 14px;font-size:13px" onclick="assignMember(${groupId})">加入</button>
+            </div>`;
+        } else {
+          html += '<div style="color:#999;font-size:12px;margin-top:8px;padding-top:8px;border-top:1px dashed #ddd">所有使用者都已分組</div>';
+        }
+
+        el.innerHTML = html;
+      } catch (e) { el.innerHTML = '<div style="color:#e53935">載入失敗</div>'; }
+    }
+
+    async function addGroup() {
+      const name = document.getElementById('new-group-name').value.trim();
+      if (!name) { alert('請輸入群組名稱'); return; }
+      try {
+        const res = await fetch('/api/groups', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name }) });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || '新增失敗'); return; }
+        toggleAddGroupForm();
+        loadGroups();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    function editGroupName(id, currentName) {
+      const newName = prompt('修改群組名稱：', currentName);
+      if (!newName || newName.trim() === currentName) return;
+      fetch('/api/groups/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ name: newName.trim() }) })
+        .then(r => r.json()).then(d => { if (d.error) alert(d.error); else loadGroups(); })
+        .catch(() => alert('網路錯誤'));
+    }
+
+    async function deleteGroup(id, name) {
+      if (!confirm(`確定要刪除群組「${name}」嗎？\n（須先移除所有成員）`)) return;
+      try {
+        const res = await fetch('/api/groups/' + id, { method: 'DELETE', headers: authHeaders() });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || '刪除失敗'); return; }
+        if (expandedGroup === id) expandedGroup = null;
+        loadGroups();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    async function assignMember(groupId) {
+      const sel = document.getElementById('assign-select-' + groupId);
+      const userId = sel.value;
+      if (!userId) { alert('請選擇成員'); return; }
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
+          method: 'PUT', headers: jsonHeaders(),
+          body: JSON.stringify({ groupId: groupId, isSupervisor: false }),
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || '指派失敗'); return; }
+        loadGroupMembers(groupId);
+        loadGroups();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    async function setSuper(userId, groupId, isSupervisor) {
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
+          method: 'PUT', headers: jsonHeaders(),
+          body: JSON.stringify({ groupId: groupId, isSupervisor: !!isSupervisor }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.error || '設定失敗'); return; }
+        loadGroupMembers(groupId);
+        loadGroups();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    async function removeMember(userId, groupId) {
+      if (!confirm('確定要將此成員移出群組？')) return;
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
+          method: 'PUT', headers: jsonHeaders(),
+          body: JSON.stringify({ groupId: null, isSupervisor: false }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.error || '移除失敗'); return; }
+        loadGroupMembers(groupId);
+        loadGroups();
+      } catch (e) { alert('網路錯誤'); }
+    }
 
     // ====== 後台登入 ======
     async function adminLogin() {
@@ -798,7 +1180,6 @@
       btn.disabled = false;
     }
 
-    // Enter 鍵登入
     document.getElementById('admin-password').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') adminLogin();
     });
