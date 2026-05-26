@@ -34,7 +34,7 @@
     .auto-field .af-label { font-size: 11px; opacity: 0.8; }
     .auto-field .af-value { font-size: 15px; font-weight: 600; }
 
-    .form-container { padding: 16px; max-width: 500px; margin: 0 auto; }
+    .form-container { padding: 16px; max-width: 500px; margin: 0 auto; padding-bottom: 70px; }
 
     /* ====== 登入/註冊畫面 ====== */
     .auth-screen { padding: 16px; max-width: 420px; margin: 0 auto; }
@@ -260,6 +260,238 @@
 
     .screen { display: none; }
     .screen.show { display: block; }
+
+    /* ====== 底部導航列 ====== */
+    .bottom-nav {
+      display: flex;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: white;
+      border-top: 1px solid #e8e8e8;
+      z-index: 100;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .nav-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 0 6px;
+      font-size: 11px;
+      color: #999;
+      cursor: pointer;
+      border: none;
+      background: none;
+      -webkit-appearance: none;
+    }
+    .nav-item.active { color: #06c755; }
+    .nav-item .nav-icon { font-size: 22px; margin-bottom: 2px; }
+
+    /* ====== 我的紀錄畫面 ====== */
+    .records-container { padding: 16px; max-width: 600px; margin: 0 auto; padding-bottom: 70px; }
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .filter-bar input[type="date"] {
+      flex: 1;
+      padding: 10px 12px;
+      border: 2px solid #e8e8e8;
+      border-radius: 10px;
+      font-size: 14px;
+      -webkit-appearance: none;
+    }
+    .filter-bar input[type="date"]:focus { outline: none; border-color: #06c755; }
+    .filter-btn {
+      padding: 10px 16px;
+      background: #06c755;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-appearance: none;
+    }
+    .filter-btn-clear {
+      padding: 10px 12px;
+      background: #f0f2f5;
+      color: #666;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      cursor: pointer;
+      -webkit-appearance: none;
+    }
+    .record-card {
+      background: white;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    .record-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .record-datetime { font-size: 13px; color: #888; }
+    .record-type {
+      display: inline-block;
+      background: #f0faf4;
+      color: #06c755;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .record-body { font-size: 14px; color: #333; line-height: 1.6; }
+    .record-body .rb-label { color: #999; font-size: 12px; }
+    .record-body .rb-row { margin-bottom: 6px; }
+    .record-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid #f0f2f5;
+    }
+    .record-actions button {
+      padding: 6px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      -webkit-appearance: none;
+    }
+    .btn-edit { background: #e3f2fd; color: #1976d2; }
+    .btn-delete { background: #fce4ec; color: #c62828; }
+    .records-empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: #999;
+      font-size: 15px;
+    }
+    .records-summary {
+      text-align: center;
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 14px;
+      padding: 8px;
+      background: #f8f9fa;
+      border-radius: 10px;
+    }
+    .records-summary strong { color: #06c755; }
+
+    /* ====== 編輯彈窗 ====== */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 460px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 18px;
+      text-align: center;
+    }
+    .modal-field { margin-bottom: 14px; }
+    .modal-field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 6px;
+    }
+    .modal-field input, .modal-field textarea, .modal-field select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 2px solid #e8e8e8;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: inherit;
+      -webkit-appearance: none;
+    }
+    .modal-field textarea { min-height: 80px; resize: vertical; }
+    .modal-field input:focus, .modal-field textarea:focus, .modal-field select:focus {
+      outline: none;
+      border-color: #06c755;
+    }
+    .modal-btns {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .modal-btns button {
+      flex: 1;
+      padding: 12px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      -webkit-appearance: none;
+    }
+    .modal-btn-cancel { background: #f0f2f5; color: #666; }
+    .modal-btn-save { background: #06c755; color: white; }
+    .modal-btn-save:disabled { opacity: 0.5; }
+
+    /* ====== 確認刪除彈窗 ====== */
+    .confirm-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .confirm-overlay.show { display: flex; }
+    .confirm-box {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 360px;
+      text-align: center;
+    }
+    .confirm-icon { font-size: 40px; margin-bottom: 12px; }
+    .confirm-msg { font-size: 15px; color: #333; margin-bottom: 18px; line-height: 1.5; }
+    .confirm-btns { display: flex; gap: 10px; }
+    .confirm-btns button {
+      flex: 1;
+      padding: 12px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      -webkit-appearance: none;
+    }
+    .confirm-btn-no { background: #f0f2f5; color: #666; }
+    .confirm-btn-yes { background: #e53935; color: white; }
   </style>
 </head>
 <body>
@@ -394,6 +626,98 @@
       </div>
 
       <button class="submit-btn" id="submit-btn" onclick="submitReport()">送出回報</button>
+      <div style="height:60px"></div>
+    </div>
+
+    <!-- 底部導航 -->
+    <div class="bottom-nav" id="bottom-nav">
+      <button class="nav-item active" id="nav-report" onclick="switchTab('form')">
+        <span class="nav-icon">📝</span>回報
+      </button>
+      <button class="nav-item" id="nav-records" onclick="switchTab('records')">
+        <span class="nav-icon">📋</span>我的紀錄
+      </button>
+    </div>
+  </div>
+
+  <!-- ====== 我的紀錄畫面 ====== -->
+  <div class="screen" id="records-screen">
+    <div class="header">
+      <h1 id="records-greeting">我的紀錄</h1>
+      <div class="sub">查看、編輯或刪除你的回報紀錄</div>
+    </div>
+
+    <div class="records-container">
+      <div class="user-bar">
+        <span class="ub-name">👤 <strong id="records-user-label">-</strong></span>
+        <button onclick="doLogout()">登出</button>
+      </div>
+
+      <div class="filter-bar">
+        <input type="date" id="filter-date" />
+        <button class="filter-btn" onclick="loadMyRecords()">查詢</button>
+        <button class="filter-btn-clear" onclick="clearFilter()">全部</button>
+      </div>
+
+      <div class="records-summary" id="records-summary" style="display:none">
+        共 <strong id="records-total">0</strong> 筆紀錄
+      </div>
+
+      <div id="records-list"></div>
+    </div>
+
+    <!-- 底部導航 -->
+    <div class="bottom-nav">
+      <button class="nav-item" id="nav-report2" onclick="switchTab('form')">
+        <span class="nav-icon">📝</span>回報
+      </button>
+      <button class="nav-item active" id="nav-records2" onclick="switchTab('records')">
+        <span class="nav-icon">📋</span>我的紀錄
+      </button>
+    </div>
+  </div>
+
+  <!-- ====== 編輯彈窗 ====== -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal-box">
+      <div class="modal-title">編輯回報</div>
+      <input type="hidden" id="edit-id" />
+      <div class="modal-field">
+        <label>事項類型</label>
+        <select id="edit-type">
+          <option value="跑法院">跑法院</option>
+          <option value="拜訪對照">拜訪對照</option>
+          <option value="對照和解">對照和解</option>
+          <option value="跑警察局">跑警察局</option>
+          <option value="到站找駕駛">到站找駕駛</option>
+          <option value="其他">其他</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>地點</label>
+        <input type="text" id="edit-location" />
+      </div>
+      <div class="modal-field">
+        <label>處理內容</label>
+        <textarea id="edit-task"></textarea>
+      </div>
+      <div class="modal-btns">
+        <button class="modal-btn-cancel" onclick="closeEditModal()">取消</button>
+        <button class="modal-btn-save" id="edit-save-btn" onclick="saveEdit()">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 確認刪除彈窗 ====== -->
+  <div class="confirm-overlay" id="delete-confirm">
+    <div class="confirm-box">
+      <div class="confirm-icon">⚠️</div>
+      <div class="confirm-msg">確定要刪除這筆回報紀錄嗎？<br>刪除後無法復原。</div>
+      <input type="hidden" id="delete-id" />
+      <div class="confirm-btns">
+        <button class="confirm-btn-no" onclick="closeDeleteConfirm()">取消</button>
+        <button class="confirm-btn-yes" id="delete-yes-btn" onclick="confirmDelete()">確定刪除</button>
+      </div>
     </div>
   </div>
 
@@ -689,6 +1013,152 @@
     document.getElementById('reg-password').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') doRegister();
     });
+
+    // ====== 底部導航切換 ======
+    function switchTab(tab) {
+      if (tab === 'form') {
+        showScreen('form-screen');
+        updateDateTime();
+      } else if (tab === 'records') {
+        showScreen('records-screen');
+        document.getElementById('records-user-label').textContent = currentUser.displayName;
+        document.getElementById('records-greeting').textContent = `${currentUser.displayName} 的紀錄`;
+        loadMyRecords();
+      }
+    }
+
+    // ====== 載入我的紀錄 ======
+    async function loadMyRecords() {
+      const dateFilter = document.getElementById('filter-date').value;
+      let url = '/api/my-reports?limit=100';
+      if (dateFilter) url += '&date=' + dateFilter;
+
+      const listEl = document.getElementById('records-list');
+      listEl.innerHTML = '<div class="records-empty">載入中...</div>';
+
+      try {
+        const res = await fetch(url, {
+          headers: { 'Authorization': 'Bearer ' + authToken },
+        });
+        if (res.status === 401) { doLogout(); return; }
+        const result = await res.json();
+
+        if (!result.data || result.data.length === 0) {
+          listEl.innerHTML = '<div class="records-empty">📭 沒有紀錄</div>';
+          document.getElementById('records-summary').style.display = 'none';
+          return;
+        }
+
+        document.getElementById('records-summary').style.display = 'block';
+        document.getElementById('records-total').textContent = result.total;
+
+        listEl.innerHTML = result.data.map(r => `
+          <div class="record-card" data-id="${r.id}">
+            <div class="record-top">
+              <span class="record-datetime">📅 ${escHtml(r.report_date)}　🕐 ${escHtml(r.report_time)}</span>
+              <span class="record-type">${escHtml(r.task_type)}</span>
+            </div>
+            <div class="record-body">
+              <div class="rb-row"><span class="rb-label">📍 地點：</span>${escHtml(r.location)}</div>
+              <div class="rb-row"><span class="rb-label">📝 內容：</span>${escHtml(r.task_description)}</div>
+              ${r.gps_latitude ? `<div class="rb-row"><span class="rb-label">🛰️ GPS：</span><a href="https://maps.google.com/?q=${r.gps_latitude},${r.gps_longitude}" target="_blank" style="color:#1976d2;text-decoration:none;font-size:12px">查看地圖</a></div>` : ''}
+            </div>
+            <div class="record-actions">
+              <button class="btn-edit" onclick="openEditModal(${r.id}, '${escAttr(r.task_type)}', '${escAttr(r.location)}', '${escAttr(r.task_description)}')">✏️ 編輯</button>
+              <button class="btn-delete" onclick="openDeleteConfirm(${r.id})">🗑️ 刪除</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        listEl.innerHTML = '<div class="records-empty">載入失敗，請重試</div>';
+      }
+    }
+
+    function clearFilter() {
+      document.getElementById('filter-date').value = '';
+      loadMyRecords();
+    }
+
+    function escAttr(s) {
+      if (!s) return '';
+      return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
+    }
+
+    // ====== 編輯彈窗 ======
+    function openEditModal(id, taskType, location, task) {
+      document.getElementById('edit-id').value = id;
+      document.getElementById('edit-type').value = taskType || '其他';
+      document.getElementById('edit-location').value = location || '';
+      document.getElementById('edit-task').value = (task || '').replace(/\\n/g, '\n');
+      document.getElementById('edit-modal').classList.add('show');
+    }
+
+    function closeEditModal() {
+      document.getElementById('edit-modal').classList.remove('show');
+    }
+
+    async function saveEdit() {
+      const id = document.getElementById('edit-id').value;
+      const taskType = document.getElementById('edit-type').value;
+      const location = document.getElementById('edit-location').value.trim();
+      const task = document.getElementById('edit-task').value.trim();
+
+      if (!location || !task) { alert('地點和處理內容不能為空'); return; }
+
+      const btn = document.getElementById('edit-save-btn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/reports/' + id, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + authToken,
+          },
+          body: JSON.stringify({ taskType, location, task }),
+        });
+        if (res.status === 401) { doLogout(); return; }
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || '修改失敗'); btn.disabled = false; return; }
+        closeEditModal();
+        loadMyRecords();
+      } catch (e) {
+        alert('網路錯誤，請重試');
+      }
+      btn.disabled = false;
+    }
+
+    // ====== 刪除確認 ======
+    function openDeleteConfirm(id) {
+      document.getElementById('delete-id').value = id;
+      document.getElementById('delete-confirm').classList.add('show');
+    }
+
+    function closeDeleteConfirm() {
+      document.getElementById('delete-confirm').classList.remove('show');
+    }
+
+    async function confirmDelete() {
+      const id = document.getElementById('delete-id').value;
+      const btn = document.getElementById('delete-yes-btn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/reports/' + id, {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + authToken },
+        });
+        if (res.status === 401) { doLogout(); return; }
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || '刪除失敗'); btn.disabled = false; return; }
+        closeDeleteConfirm();
+        loadMyRecords();
+        loadTodayCount();
+      } catch (e) {
+        alert('網路錯誤，請重試');
+      }
+      btn.disabled = false;
+    }
 
     // 啟動
     checkAuth();

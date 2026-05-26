@@ -298,10 +298,39 @@ app.put('/api/reports/:id', requireAuth, (req, res) => {
   }
 });
 
-// 刪除回報紀錄（管理員限定）
-app.delete('/api/reports/:id', requireAdmin, (req, res) => {
+// 取得自己的回報紀錄
+app.get('/api/my-reports', requireAuth, (req, res) => {
+  const { date, page = 1, limit = 50 } = req.query;
+  const { userId } = req.session;
+  const offset = (page - 1) * limit;
+
+  let sql = 'SELECT * FROM reports WHERE user_id = ?';
+  const params = [userId];
+
+  if (date) { sql += ' AND report_date = ?'; params.push(date); }
+
+  const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
+  const total = db.prepare(countSql).get(...params).total;
+
+  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  params.push(Number(limit), Number(offset));
+
+  const reports = db.prepare(sql).all(...params);
+  res.json({ data: reports, total, page: Number(page), totalPages: Math.ceil(total / limit) });
+});
+
+// 刪除回報紀錄（自己的或管理員可刪除所有）
+app.delete('/api/reports/:id', requireAuth, (req, res) => {
   const { id } = req.params;
   try {
+    const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(id);
+    if (!report) return res.status(404).json({ error: '找不到此回報' });
+
+    // 一般人員只能刪自己的，管理員可以刪所有人的
+    if (req.session.role !== 'admin' && report.user_id !== req.session.userId) {
+      return res.status(403).json({ error: '只能刪除自己的回報' });
+    }
+
     db.prepare('DELETE FROM reports WHERE id = ?').run(id);
     res.json({ success: true });
   } catch (err) {
