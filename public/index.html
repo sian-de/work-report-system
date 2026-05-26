@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>工作動態回報系統 - 管理後台</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -345,30 +345,108 @@
     .login-card .lc-field { margin-bottom: 14px; }
     .login-card .lc-field label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
     .login-card .lc-field input {
-      width: 100%; padding: 12px 14px; border: 2px solid #e8e8e8; border-radius: 10px; font-size: 15px;
+      width: 100%; padding: 12px 14px; border: 2px solid #e8e8e8; border-radius: 10px; font-size: 16px;
+      -webkit-appearance: none;
     }
     .login-card .lc-field input:focus { outline: none; border-color: #06c755; }
     .login-card .lc-btn {
       width: 100%; padding: 14px; background: linear-gradient(135deg, #06c755, #04a847);
       color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 4px;
+      -webkit-appearance: none;
     }
     .login-card .lc-btn:disabled { opacity: 0.5; }
     .login-card .lc-error { background: #fce4ec; color: #c62828; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: none; }
     .login-card .lc-error.show { display: block; }
 
+    /* ====== 手機版優化 ====== */
     @media (max-width: 768px) {
-      .stats-grid { grid-template-columns: repeat(2, 1fr); }
-      .filter-bar { flex-direction: column; align-items: stretch; }
-      .filter-bar .spacer { display: none; }
-      .navbar { padding: 0 16px; }
-      .navbar h1 { font-size: 17px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
       .stat-icon { display: none; }
-      .tabs { font-size: 13px; }
-    }
-    @media (max-width: 480px) {
-      .stats-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
       .stat-card { padding: 16px; }
-      .stat-value { font-size: 26px; }
+      .stat-value { font-size: 24px; }
+      .stat-label { font-size: 12px; }
+
+      .filter-bar { flex-direction: column; align-items: stretch; padding: 14px; }
+      .filter-bar .spacer { display: none; }
+      .filter-bar label { font-size: 13px; }
+      .filter-bar input, .filter-bar select { font-size: 16px; } /* 防止 iOS 放大 */
+
+      .navbar { padding: 0 12px; height: 52px; }
+      .navbar h1 { font-size: 16px; }
+      .nav-right { gap: 6px; }
+      .nav-right .nav-date { display: none; } /* 手機隱藏日期 */
+      .nav-right .nav-user { font-size: 12px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .nav-right .nav-logout { padding: 5px 10px; font-size: 12px; }
+
+      .container { padding: 14px 12px; }
+
+      /* 頁籤改為可滑動 */
+      .tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        gap: 2px;
+        padding: 3px;
+      }
+      .tabs::-webkit-scrollbar { display: none; }
+      .tab-btn {
+        padding: 10px 8px;
+        font-size: 13px;
+        white-space: nowrap;
+        min-width: 0;
+        flex-shrink: 0;
+      }
+
+      /* 表格改為卡片式 */
+      .user-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .user-table table { min-width: 580px; }
+      .user-table th, .user-table td { padding: 10px 12px; font-size: 13px; }
+
+      /* 報告卡片 */
+      .report-card { padding: 16px; margin-bottom: 10px; border-radius: 12px; }
+      .report-top { flex-direction: column; gap: 8px; align-items: flex-start; }
+      .report-datetime { text-align: left; }
+      .user-avatar { width: 34px; height: 34px; font-size: 14px; }
+      .item-actions { margin-top: 6px; }
+      .btn-edit, .btn-del-report { padding: 4px 12px; font-size: 12px; }
+
+      /* 編輯彈窗 */
+      .modal-box { padding: 20px 16px; border-radius: 14px; }
+      .modal-field input, .modal-field textarea, .modal-field select { font-size: 16px; } /* 防止 iOS 放大 */
+      .modal-actions .btn { padding: 14px; font-size: 15px; }
+
+      /* 分頁 */
+      .pagination { flex-wrap: wrap; }
+      .pagination button { padding: 8px 12px; font-size: 13px; }
+
+      /* 類型管理 */
+      .type-item { flex-wrap: wrap; padding: 14px 16px; gap: 8px; }
+      .type-actions { width: 100%; justify-content: flex-end; gap: 4px; }
+      .type-actions button { padding: 6px 10px; font-size: 11px; }
+      .type-name { font-size: 14px; }
+      .mgmt-header { flex-direction: column; gap: 10px; align-items: stretch; }
+      .mgmt-header h2 { font-size: 16px; }
+
+      /* 分組管理 */
+      .group-card { flex-wrap: wrap; padding: 14px 16px; }
+      .group-actions { width: 100%; justify-content: flex-end; margin-top: 4px; }
+      .member-row { flex-wrap: wrap; gap: 6px; }
+      .member-actions { width: 100%; display: flex; justify-content: flex-end; gap: 4px; }
+      .assign-bar { flex-wrap: wrap; }
+      .assign-bar select { min-width: 0; }
+
+      /* 新增表單 */
+      .add-form-row { flex-direction: column; }
+      .add-form-row input { font-size: 16px; }
+      .add-form-row .btn { width: 100%; text-align: center; }
+    }
+
+    @media (max-width: 380px) {
+      .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .stat-card { padding: 12px; }
+      .stat-value { font-size: 20px; }
+      .tab-btn { padding: 8px 6px; font-size: 12px; }
+      .navbar h1 { font-size: 14px; }
     }
   </style>
 </head>

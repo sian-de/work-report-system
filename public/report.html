@@ -492,6 +492,61 @@
     }
     .confirm-btn-no { background: #f0f2f5; color: #666; }
     .confirm-btn-yes { background: #e53935; color: white; }
+
+    /* ====== 手機版優化 ====== */
+    @media (max-width: 420px) {
+      .header { padding: 18px 16px 16px; }
+      .header h1 { font-size: 18px; }
+      .auto-fields { gap: 12px; }
+      .auto-field { padding: 6px 10px; }
+      .auto-field .af-value { font-size: 14px; }
+
+      .form-container { padding: 12px; }
+
+      .type-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+      .type-btn { padding: 10px 4px; font-size: 12px; }
+      .type-btn .type-icon { font-size: 16px; }
+
+      /* 防止 iOS 自動放大輸入框 */
+      input[type="text"], textarea, select, .auth-field input {
+        font-size: 16px !important;
+      }
+
+      .submit-btn { padding: 14px; font-size: 16px; border-radius: 12px; }
+
+      .records-container { padding: 12px; }
+      .record-card { padding: 14px; }
+      .record-top { flex-direction: column; gap: 6px; align-items: flex-start; }
+      .record-actions { gap: 6px; }
+      .record-actions button { padding: 6px 12px; font-size: 12px; }
+
+      .user-bar { padding: 6px 10px; }
+      .user-bar .ub-name { font-size: 12px; }
+
+      .modal-box { padding: 20px 16px; }
+      .modal-field input, .modal-field textarea, .modal-field select { font-size: 16px !important; }
+      .modal-btns button { padding: 14px; }
+
+      .confirm-box { padding: 20px 16px; }
+
+      .bottom-nav { padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+      .nav-item { padding: 6px 0 4px; font-size: 10px; }
+      .nav-item .nav-icon { font-size: 20px; }
+
+      .success-detail { padding: 16px; margin: 16px auto; }
+      .success-detail .sd-label { width: 60px; font-size: 13px; }
+      .success-detail .sd-value { font-size: 13px; }
+      .success-icon { font-size: 48px; }
+      .success-title { font-size: 20px; }
+    }
+
+    /* 非常小的螢幕（如 iPhone SE） */
+    @media (max-width: 340px) {
+      .header h1 { font-size: 16px; }
+      .auto-field .af-value { font-size: 13px; }
+      .type-btn { font-size: 11px; padding: 8px 2px; }
+      .auth-card { padding: 20px 16px; }
+    }
   </style>
 </head>
 <body>

@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>軌跡查詢 - 工作動態回報系統</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -188,9 +188,49 @@
     .map-popup .mp-label { color: #888; }
 
     @media (max-width: 768px) {
-      .main-content { flex-direction: column-reverse; }
-      .side-panel { width: 100%; height: 45vh; }
-      #map { height: 55vh; }
+      .navbar { padding: 0 12px; height: 48px; }
+      .navbar h1 { font-size: 16px; }
+      .nav-link { font-size: 12px; padding: 5px 10px; }
+
+      .controls {
+        padding: 10px 12px;
+        gap: 8px;
+        font-size: 13px;
+      }
+      .controls label { font-size: 13px; }
+      .controls select, .controls input {
+        padding: 8px 10px;
+        font-size: 16px; /* 防止 iOS 放大 */
+        max-width: 100%;
+      }
+      .btn { padding: 8px 14px; font-size: 13px; }
+
+      .main-content {
+        flex-direction: column;
+        height: auto;
+      }
+      #map { height: 45vh; min-height: 250px; }
+      .side-panel {
+        width: 100%;
+        height: auto;
+        max-height: 50vh;
+        overflow-y: auto;
+      }
+
+      .timeline-item { padding: 10px 14px; gap: 10px; }
+      .tl-marker { width: 28px; height: 28px; font-size: 12px; }
+      .tl-time { font-size: 12px; }
+      .tl-location { font-size: 12px; }
+      .tl-task { font-size: 11px; }
+
+      .panel-header { padding: 12px 14px; font-size: 14px; }
+      .panel-summary { padding: 10px 14px; gap: 12px; }
+      .summary-item .sv { font-size: 16px; }
+    }
+
+    @media (max-width: 380px) {
+      .controls { flex-direction: column; align-items: stretch; }
+      .controls select, .controls input { width: 100%; }
     }
   </style>
 </head>
