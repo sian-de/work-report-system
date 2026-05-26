@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>軌跡查詢 - 工作動態回報系統</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+      background: #f0f2f5;
+      color: #333;
+    }
+
+    .navbar {
+      background: linear-gradient(135deg, #06c755, #04a847);
+      color: white;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+    .navbar h1 { font-size: 18px; }
+    .nav-link {
+      color: white;
+      text-decoration: none;
+      font-size: 14px;
+      background: rgba(255,255,255,0.2);
+      padding: 6px 14px;
+      border-radius: 20px;
+    }
+    .nav-link:hover { background: rgba(255,255,255,0.3); }
+
+    .controls {
+      background: white;
+      padding: 16px 20px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .controls label { font-size: 14px; color: #555; font-weight: 500; }
+    .controls select, .controls input {
+      padding: 9px 12px;
+      border: 2px solid #e8e8e8;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+    .controls select:focus, .controls input:focus {
+      outline: none;
+      border-color: #06c755;
+    }
+    .btn {
+      padding: 9px 18px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #06c755, #04a847);
+      color: white;
+    }
+
+    .main-content {
+      display: flex;
+      height: calc(100vh - 56px - 58px);
+    }
+
+    /* 地圖 */
+    #map {
+      flex: 1;
+      min-height: 400px;
+    }
+
+    /* 側邊面板 */
+    .side-panel {
+      width: 340px;
+      background: white;
+      overflow-y: auto;
+      box-shadow: -2px 0 12px rgba(0,0,0,0.06);
+    }
+    .panel-header {
+      padding: 16px 18px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #eee;
+      font-weight: 600;
+      font-size: 15px;
+      color: #333;
+      position: sticky;
+      top: 0;
+    }
+    .panel-summary {
+      padding: 14px 18px;
+      background: #f0faf4;
+      border-bottom: 1px solid #e0f0e8;
+      font-size: 13px;
+      color: #555;
+      display: flex;
+      gap: 16px;
+    }
+    .summary-item {
+      text-align: center;
+    }
+    .summary-item .sv { font-size: 20px; font-weight: 700; color: #06c755; }
+    .summary-item .sl { font-size: 11px; color: #888; }
+
+    .timeline { padding: 0; }
+    .timeline-item {
+      display: flex;
+      padding: 14px 18px;
+      border-bottom: 1px solid #f0f0f0;
+      gap: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .timeline-item:hover { background: #f8f9fa; }
+    .timeline-item.active { background: #f0faf4; border-left: 3px solid #06c755; }
+
+    .tl-marker {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #06c755;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .tl-content { flex: 1; min-width: 0; }
+    .tl-time {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 2px;
+    }
+    .tl-location {
+      font-size: 13px;
+      color: #555;
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tl-task {
+      font-size: 12px;
+      color: #888;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tl-stay {
+      font-size: 11px;
+      margin-top: 4px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      display: inline-block;
+    }
+    .stay-short { background: #e8f5e9; color: #2e7d32; }
+    .stay-medium { background: #fff8e1; color: #f57f17; }
+    .stay-long { background: #fce4ec; color: #c62828; }
+
+    .no-data {
+      text-align: center;
+      padding: 60px 20px;
+      color: #999;
+    }
+    .no-data .icon { font-size: 40px; margin-bottom: 10px; }
+
+    /* 自訂地圖 Popup */
+    .map-popup {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+    }
+    .map-popup .mp-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+    .map-popup .mp-row { font-size: 12px; color: #555; margin-bottom: 3px; }
+    .map-popup .mp-label { color: #888; }
+
+    @media (max-width: 768px) {
+      .main-content { flex-direction: column-reverse; }
+      .side-panel { width: 100%; height: 45vh; }
+      #map { height: 55vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <h1>🗺️ 軌跡查詢</h1>
+    <a class="nav-link" href="/admin">← 回到後台</a>
+  </div>
+
+  <div class="controls">
+    <label>人員</label>
+    <select id="sel-user">
+      <option value="">請先選擇人員</option>
+    </select>
+    <label>日期</label>
+    <input type="date" id="sel-date" />
+    <label>至</label>
+    <input type="date" id="sel-date-end" />
+    <button class="btn btn-primary" onclick="loadTrajectory()">查詢軌跡</button>
+  </div>
+
+  <div class="main-content">
+    <div id="map"></div>
+    <div class="side-panel">
+      <div class="panel-header">📍 移動紀錄</div>
+      <div class="panel-summary" id="panel-summary" style="display:none">
+        <div class="summary-item">
+          <div class="sv" id="sum-points">0</div>
+          <div class="sl">打卡點</div>
+        </div>
+        <div class="summary-item">
+          <div class="sv" id="sum-distance">0</div>
+          <div class="sl">總距離(km)</div>
+        </div>
+        <div class="summary-item">
+          <div class="sv" id="sum-duration">0</div>
+          <div class="sl">總時長</div>
+        </div>
+      </div>
+      <div class="timeline" id="timeline">
+        <div class="no-data">
+          <div class="icon">🗺️</div>
+          <p>選擇人員和日期後查詢</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const authToken = localStorage.getItem('authToken') || '';
+    function authHeaders() { return { 'Authorization': 'Bearer ' + authToken }; }
+
+    // 檢查登入
+    if (!authToken) { window.location.href = '/report.html'; }
+
+    // 初始化地圖（預設台灣中心）
+    const map = L.map('map').setView([23.8, 120.9], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap',
+      maxZoom: 19,
+    }).addTo(map);
+
+    let markers = [];
+    let polyline = null;
+    let reportData = [];
+
+    // 自訂圖標
+    function createNumberIcon(num, isFirst, isLast) {
+      const color = isFirst ? '#4a90d9' : isLast ? '#e53935' : '#06c755';
+      return L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="
+          background:${color};
+          color:white;
+          width:28px;height:28px;
+          border-radius:50%;
+          display:flex;align-items:center;justify-content:center;
+          font-weight:700;font-size:12px;
+          border:3px solid white;
+          box-shadow:0 2px 6px rgba(0,0,0,0.3);
+        ">${num}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      });
+    }
+
+    // 格式化日期
+    function formatDate(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    // 載入使用者列表
+    async function loadUsers() {
+      try {
+        const res = await fetch('/api/gps-users', { headers: authHeaders() });
+        const users = await res.json();
+        const sel = document.getElementById('sel-user');
+        users.forEach(u => {
+          const opt = document.createElement('option');
+          opt.value = u.user_id;
+          opt.textContent = `${u.display_name}（${u.report_count} 筆）`;
+          sel.appendChild(opt);
+        });
+      } catch (e) {
+        console.error('載入使用者失敗', e);
+      }
+    }
+
+    // 計算兩點距離（公里）
+    function calcDistance(lat1, lng1, lat2, lng2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    // 格式化停留時間
+    function formatStay(minutes) {
+      if (minutes === null) return null;
+      if (minutes < 60) return `${minutes} 分鐘`;
+      const h = Math.floor(minutes / 60);
+      const m = minutes % 60;
+      return m > 0 ? `${h} 小時 ${m} 分` : `${h} 小時`;
+    }
+
+    function stayClass(minutes) {
+      if (minutes === null) return '';
+      if (minutes <= 30) return 'stay-short';
+      if (minutes <= 120) return 'stay-medium';
+      return 'stay-long';
+    }
+
+    // 載入軌跡
+    async function loadTrajectory() {
+      const userId = document.getElementById('sel-user').value;
+      const date = document.getElementById('sel-date').value;
+      const dateEnd = document.getElementById('sel-date-end').value;
+
+      if (!userId) {
+        alert('請選擇人員');
+        return;
+      }
+
+      const params = new URLSearchParams({ userId });
+      if (date) params.append('startDate', date);
+      if (dateEnd) params.append('endDate', dateEnd || date);
+      else if (date) params.append('endDate', date);
+
+      try {
+        const res = await fetch('/api/trajectory?' + params, { headers: authHeaders() });
+        reportData = await res.json();
+
+        clearMap();
+
+        if (reportData.length === 0) {
+          document.getElementById('timeline').innerHTML = '<div class="no-data"><div class="icon">📭</div><p>此期間無 GPS 回報紀錄</p></div>';
+          document.getElementById('panel-summary').style.display = 'none';
+          return;
+        }
+
+        drawTrajectory(reportData);
+        renderTimeline(reportData);
+        renderSummary(reportData);
+
+      } catch (e) {
+        console.error('載入軌跡失敗', e);
+      }
+    }
+
+    function clearMap() {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+      if (polyline) { map.removeLayer(polyline); polyline = null; }
+    }
+
+    function drawTrajectory(data) {
+      const latlngs = [];
+
+      data.forEach((r, i) => {
+        const ll = [r.gps_latitude, r.gps_longitude];
+        latlngs.push(ll);
+
+        const isFirst = i === 0;
+        const isLast = i === data.length - 1;
+        const icon = createNumberIcon(i + 1, isFirst, isLast);
+
+        const stayText = r.stay_minutes !== null ? `<br><span class="mp-label">停留：</span>${formatStay(r.stay_minutes)}` : '';
+        const popup = `
+          <div class="map-popup">
+            <div class="mp-title">${r.location || '未命名'}</div>
+            <div class="mp-row"><span class="mp-label">時間：</span>${r.report_date} ${r.report_time}</div>
+            <div class="mp-row"><span class="mp-label">事項：</span>${r.task_description || ''}</div>
+            <div class="mp-row"><span class="mp-label">座標：</span>${r.gps_latitude.toFixed(6)}, ${r.gps_longitude.toFixed(6)}</div>
+            <div class="mp-row">${stayText}</div>
+          </div>
+        `;
+
+        const marker = L.marker(ll, { icon }).addTo(map).bindPopup(popup);
+        markers.push(marker);
+      });
+
+      // 畫移動路線
+      if (latlngs.length > 1) {
+        polyline = L.polyline(latlngs, {
+          color: '#06c755',
+          weight: 3,
+          opacity: 0.7,
+          dashArray: '8, 8',
+        }).addTo(map);
+      }
+
+      // 調整地圖視野
+      const group = L.featureGroup(markers);
+      map.fitBounds(group.getBounds().pad(0.15));
+    }
+
+    function renderTimeline(data) {
+      const html = data.map((r, i) => {
+        const isFirst = i === 0;
+        const isLast = i === data.length - 1;
+        const label = isFirst ? '起' : isLast ? '終' : (i + 1);
+        const stay = formatStay(r.stay_minutes);
+        const sc = stayClass(r.stay_minutes);
+        const stayHtml = stay ? `<div class="tl-stay ${sc}">停留 ${stay}</div>` : '';
+
+        return `
+          <div class="timeline-item" onclick="focusPoint(${i})">
+            <div class="tl-marker" style="background:${isFirst ? '#4a90d9' : isLast ? '#e53935' : '#06c755'}">${label}</div>
+            <div class="tl-content">
+              <div class="tl-time">${r.report_date} ${r.report_time}</div>
+              <div class="tl-location">📍 ${r.location || '未命名'}</div>
+              <div class="tl-task">📝 ${r.task_description || ''}</div>
+              ${stayHtml}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('timeline').innerHTML = html;
+    }
+
+    function renderSummary(data) {
+      const panel = document.getElementById('panel-summary');
+      panel.style.display = 'flex';
+
+      document.getElementById('sum-points').textContent = data.length;
+
+      // 計算總距離
+      let totalDist = 0;
+      for (let i = 1; i < data.length; i++) {
+        totalDist += calcDistance(
+          data[i - 1].gps_latitude, data[i - 1].gps_longitude,
+          data[i].gps_latitude, data[i].gps_longitude
+        );
+      }
+      document.getElementById('sum-distance').textContent = totalDist.toFixed(1);
+
+      // 計算總時長
+      if (data.length >= 2) {
+        const first = new Date(`${data[0].report_date}T${data[0].report_time}:00`);
+        const last = new Date(`${data[data.length - 1].report_date}T${data[data.length - 1].report_time}:00`);
+        const diffMin = Math.round((last - first) / 60000);
+        document.getElementById('sum-duration').textContent = formatStay(diffMin) || '0';
+      } else {
+        document.getElementById('sum-duration').textContent = '-';
+      }
+    }
+
+    function focusPoint(index) {
+      const r = reportData[index];
+      map.setView([r.gps_latitude, r.gps_longitude], 16);
+      markers[index].openPopup();
+
+      // 高亮時間軸
+      document.querySelectorAll('.timeline-item').forEach((el, i) => {
+        el.classList.toggle('active', i === index);
+      });
+    }
+
+    // 初始化
+    const today = formatDate(new Date());
+    document.getElementById('sel-date').value = today;
+    document.getElementById('sel-date-end').value = today;
+    loadUsers();
+  </script>
+</body>
+</html>

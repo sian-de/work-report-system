@@ -1,0 +1,9 @@
+node_modules/
+.env
+reports.db
+reports.db-shm
+reports.db-wal
+bot.js
+ngrok.exe
+cloudflared.exe
+cf2.exe

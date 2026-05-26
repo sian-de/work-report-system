@@ -1,0 +1,17 @@
+{
+  "name": "work-report-system",
+  "version": "1.0.0",
+  "description": "工作動態回報系統",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

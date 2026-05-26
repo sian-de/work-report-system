@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>工作動態回報系統 - 管理後台</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+      background: #f0f2f5;
+      color: #333;
+    }
+
+    .navbar {
+      background: linear-gradient(135deg, #06c755, #04a847);
+      color: white;
+      padding: 0 30px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .navbar h1 { font-size: 20px; font-weight: 600; }
+    .nav-right { display: flex; align-items: center; gap: 12px; }
+    .nav-right .nav-date {
+      font-size: 14px;
+      opacity: 0.9;
+      background: rgba(255,255,255,0.15);
+      padding: 6px 14px;
+      border-radius: 20px;
+    }
+    .nav-right .nav-user {
+      font-size: 13px;
+      opacity: 0.9;
+    }
+    .nav-right .nav-logout {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: white;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .nav-right .nav-logout:hover { background: rgba(255,255,255,0.3); }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
+
+    /* 頁籤 */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 20px;
+      background: white;
+      border-radius: 12px;
+      padding: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      background: none;
+      font-size: 14px;
+      font-weight: 600;
+      color: #888;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-btn.active { background: #06c755; color: white; }
+    .tab-btn:hover:not(.active) { background: #f0f0f0; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* 統計卡片 */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: white;
+      border-radius: 16px;
+      padding: 22px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+    }
+    .stat-card:nth-child(1)::before { background: #06c755; }
+    .stat-card:nth-child(2)::before { background: #4a90d9; }
+    .stat-card:nth-child(3)::before { background: #ff9800; }
+    .stat-card:nth-child(4)::before { background: #9c27b0; }
+    .stat-label { font-size: 13px; color: #888; margin-bottom: 6px; }
+    .stat-value { font-size: 32px; font-weight: 700; }
+    .stat-card:nth-child(1) .stat-value { color: #06c755; }
+    .stat-card:nth-child(2) .stat-value { color: #4a90d9; }
+    .stat-card:nth-child(3) .stat-value { color: #ff9800; }
+    .stat-card:nth-child(4) .stat-value { color: #9c27b0; }
+    .stat-icon {
+      position: absolute;
+      right: 18px; top: 50%;
+      transform: translateY(-50%);
+      font-size: 36px;
+      opacity: 0.15;
+    }
+
+    /* 篩選列 */
+    .filter-bar {
+      background: white;
+      border-radius: 16px;
+      padding: 16px 22px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    }
+    .filter-bar label { font-size: 14px; color: #555; font-weight: 500; }
+    .filter-bar input, .filter-bar select {
+      padding: 10px 14px;
+      border: 2px solid #e8e8e8;
+      border-radius: 10px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+    .filter-bar input:focus, .filter-bar select:focus { outline: none; border-color: #06c755; }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: linear-gradient(135deg, #06c755, #04a847); color: white; }
+    .btn-secondary { background: #f0f0f0; color: #555; }
+    .btn-export { background: linear-gradient(135deg, #4a90d9, #3a7bc8); color: white; }
+    .btn-danger { background: #e53935; color: white; font-size: 12px; padding: 6px 14px; }
+    .filter-bar .spacer { flex: 1; }
+
+    /* 回報列表 */
+    .report-list { margin-top: 8px; }
+    .report-card {
+      background: white;
+      border-radius: 16px;
+      padding: 22px;
+      margin-bottom: 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+      border-left: 4px solid #06c755;
+      transition: box-shadow 0.2s;
+    }
+    .report-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+    .report-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .report-user { display: flex; align-items: center; gap: 10px; }
+    .user-avatar {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #06c755, #04a847);
+      color: white;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 16px;
+    }
+    .user-name { font-weight: 600; font-size: 16px; color: #333; }
+    .report-datetime { font-size: 13px; color: #999; text-align: right; }
+    .report-datetime .rd-date { font-weight: 500; color: #666; }
+    .gps-link { color: #4a90d9; text-decoration: none; font-size: 13px; }
+    .gps-link:hover { text-decoration: underline; }
+
+    /* 編輯/刪除按鈕 */
+    .item-actions { display: flex; gap: 6px; margin-top: 4px; }
+    .btn-edit { background: #4a90d9; color: white; border: none; border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
+    .btn-del-report { background: #e53935; color: white; border: none; border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
+
+    /* 編輯彈窗 */
+    .modal-overlay {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: white; border-radius: 16px; padding: 28px; width: 90%; max-width: 480px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+    }
+    .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 18px; color: #333; }
+    .modal-field { margin-bottom: 14px; }
+    .modal-field label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
+    .modal-field input, .modal-field textarea, .modal-field select {
+      width: 100%; padding: 10px 12px; border: 2px solid #e8e8e8; border-radius: 10px; font-size: 14px; font-family: inherit;
+    }
+    .modal-field input:focus, .modal-field textarea:focus, .modal-field select:focus { outline: none; border-color: #06c755; }
+    .modal-field textarea { min-height: 80px; resize: vertical; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 6px; }
+    .modal-actions .btn { flex: 1; padding: 12px; text-align: center; }
+
+    /* 分頁 */
+    .pagination { display: flex; justify-content: center; gap: 8px; margin-top: 24px; }
+    .pagination button {
+      padding: 10px 16px;
+      border: 2px solid #e8e8e8;
+      background: white;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .pagination button:hover { border-color: #06c755; }
+    .pagination button.active { background: #06c755; color: white; border-color: #06c755; }
+    .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .empty-state { text-align: center; padding: 80px 20px; color: #999; }
+    .empty-state .icon { font-size: 56px; margin-bottom: 16px; }
+    .empty-state p { font-size: 16px; }
+    .refresh-indicator { font-size: 12px; color: #aaa; text-align: center; margin-top: 16px; }
+
+    /* 人員管理 */
+    .user-table {
+      width: 100%;
+      background: white;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    }
+    .user-table table { width: 100%; border-collapse: collapse; }
+    .user-table th {
+      background: #f8f9fa;
+      padding: 14px 18px;
+      text-align: left;
+      font-size: 13px;
+      color: #888;
+      font-weight: 600;
+      border-bottom: 2px solid #eee;
+    }
+    .user-table td {
+      padding: 14px 18px;
+      font-size: 14px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .user-table tr:last-child td { border-bottom: none; }
+    .user-table tr:hover td { background: #fafafa; }
+    .role-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .role-admin { background: #fff3e0; color: #e65100; }
+    .role-user { background: #e8f5e9; color: #2e7d32; }
+
+    /* 登入表單 */
+    .login-prompt {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      background: #f0f2f5;
+    }
+    .login-prompt .lp-header {
+      background: linear-gradient(135deg, #06c755, #04a847);
+      color: white;
+      padding: 24px;
+      text-align: center;
+      width: 100%;
+    }
+    .login-prompt .lp-header h1 { font-size: 20px; }
+    .login-prompt .lp-header .sub { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+    .login-card {
+      background: white;
+      border-radius: 14px;
+      padding: 28px 24px;
+      margin-top: 40px;
+      width: 90%;
+      max-width: 400px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .login-card .lc-title { font-size: 18px; font-weight: 700; text-align: center; margin-bottom: 20px; color: #333; }
+    .login-card .lc-field { margin-bottom: 14px; }
+    .login-card .lc-field label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
+    .login-card .lc-field input {
+      width: 100%; padding: 12px 14px; border: 2px solid #e8e8e8; border-radius: 10px; font-size: 15px;
+    }
+    .login-card .lc-field input:focus { outline: none; border-color: #06c755; }
+    .login-card .lc-btn {
+      width: 100%; padding: 14px; background: linear-gradient(135deg, #06c755, #04a847);
+      color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 4px;
+    }
+    .login-card .lc-btn:disabled { opacity: 0.5; }
+    .login-card .lc-error { background: #fce4ec; color: #c62828; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: none; }
+    .login-card .lc-error.show { display: block; }
+
+    @media (max-width: 768px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .filter-bar { flex-direction: column; align-items: stretch; }
+      .filter-bar .spacer { display: none; }
+      .navbar { padding: 0 16px; }
+      .navbar h1 { font-size: 17px; }
+      .stat-icon { display: none; }
+      .tabs { font-size: 13px; }
+    }
+    @media (max-width: 480px) {
+      .stats-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .stat-card { padding: 16px; }
+      .stat-value { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 登入表單 -->
+  <div id="login-prompt" class="login-prompt" style="display:none">
+    <div class="lp-header">
+      <h1>工作動態回報系統</h1>
+      <div class="sub">管理後台 - 請先登入</div>
+    </div>
+    <div class="login-card">
+      <div class="lc-title">登入</div>
+      <div class="lc-error" id="admin-login-error"></div>
+      <div class="lc-field">
+        <label>帳號</label>
+        <input type="text" id="admin-username" placeholder="輸入帳號" />
+      </div>
+      <div class="lc-field">
+        <label>密碼</label>
+        <input type="password" id="admin-password" placeholder="輸入密碼" />
+      </div>
+      <button class="lc-btn" id="admin-login-btn" onclick="adminLogin()">登入</button>
+    </div>
+  </div>
+
+  <!-- 主介面 -->
+  <div id="main-app" style="display:none">
+    <div class="navbar">
+      <h1>工作動態回報系統</h1>
+      <div class="nav-right">
+        <span class="nav-date" id="today-date"></span>
+        <span class="nav-user" id="nav-user"></span>
+        <button class="nav-logout" onclick="doLogout()">登出</button>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('reports')">📊 回報紀錄</button>
+        <button class="tab-btn" onclick="switchTab('users')">👥 人員管理</button>
+      </div>
+
+      <!-- 回報紀錄頁籤 -->
+      <div class="tab-content active" id="tab-reports">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">今日回報人數</div>
+            <div class="stat-value" id="stat-users">-</div>
+            <div class="stat-icon">👥</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">今日回報筆數</div>
+            <div class="stat-value" id="stat-reports">-</div>
+            <div class="stat-icon">📝</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">回報率</div>
+            <div class="stat-value" id="stat-rate">-</div>
+            <div class="stat-icon">📊</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">總註冊人數</div>
+            <div class="stat-value" id="stat-all">-</div>
+            <div class="stat-icon">🏢</div>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <label>日期</label>
+          <input type="date" id="filter-date" />
+          <label>姓名</label>
+          <input type="text" id="filter-user" placeholder="搜尋..." />
+          <button class="btn btn-primary" onclick="loadReports()">查詢</button>
+          <button class="btn btn-secondary" onclick="resetFilters()">重設</button>
+          <span class="spacer"></span>
+          <button class="btn btn-export" onclick="exportCSV()">📥 匯出 CSV</button>
+          <a href="/admin/track.html" class="btn" style="background:linear-gradient(135deg,#ff9800,#f57c00);color:white;text-decoration:none">🗺️ 軌跡查詢</a>
+        </div>
+
+        <div class="report-list" id="report-list">
+          <div class="empty-state"><div class="icon">⏳</div><p>載入中...</p></div>
+        </div>
+        <div class="pagination" id="pagination"></div>
+        <div class="refresh-indicator">每 30 秒自動更新</div>
+      </div>
+
+      <!-- 人員管理頁籤 -->
+      <div class="tab-content" id="tab-users">
+        <div class="user-table" id="user-table">
+          <table>
+            <thead>
+              <tr>
+                <th>帳號</th>
+                <th>姓名</th>
+                <th>角色</th>
+                <th>建立時間</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="user-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 編輯彈窗 -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal-box">
+      <div class="modal-title">編輯回報紀錄</div>
+      <input type="hidden" id="edit-id" />
+      <div class="modal-field">
+        <label>事項類型</label>
+        <select id="edit-type">
+          <option value="跑法院">⚖️ 跑法院</option>
+          <option value="拜訪對照">🤝 拜訪對照</option>
+          <option value="對照和解">📝 對照和解</option>
+          <option value="跑警察局">🏛️ 跑警察局</option>
+          <option value="到站找駕駛">🚌 到站找駕駛</option>
+          <option value="其他">📌 其他</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>地點</label>
+        <input type="text" id="edit-location" />
+      </div>
+      <div class="modal-field">
+        <label>處理內容</label>
+        <textarea id="edit-task"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+        <button class="btn btn-primary" id="edit-save-btn" onclick="saveEdit()">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentPage = 1;
+    let authToken = localStorage.getItem('authToken') || '';
+    let currentUser = null;
+    let autoRefreshTimer = null;
+
+    function authHeaders() {
+      return { 'Authorization': 'Bearer ' + authToken };
+    }
+
+    // ====== 登入驗證 ======
+    async function checkAuth() {
+      if (!authToken) { showLoginPrompt(); return; }
+      try {
+        const res = await fetch('/api/me', { headers: authHeaders() });
+        if (!res.ok) { showLoginPrompt(); return; }
+        currentUser = await res.json();
+        showMainApp();
+      } catch (e) {
+        showLoginPrompt();
+      }
+    }
+
+    function showLoginPrompt() {
+      document.getElementById('login-prompt').style.display = 'flex';
+      document.getElementById('main-app').style.display = 'none';
+    }
+
+    function showMainApp() {
+      document.getElementById('login-prompt').style.display = 'none';
+      document.getElementById('main-app').style.display = 'block';
+      document.getElementById('nav-user').textContent = currentUser.displayName;
+      document.getElementById('today-date').textContent = formatDate(new Date());
+      document.getElementById('filter-date').value = formatDate(new Date());
+      loadSummary();
+      loadReports();
+      // 自動更新（每 30 秒）
+      if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+      autoRefreshTimer = setInterval(() => {
+        loadSummary();
+        loadReports(currentPage);
+      }, 30000);
+    }
+
+    function doLogout() {
+      fetch('/api/logout', { method: 'POST', headers: authHeaders() });
+      localStorage.removeItem('authToken');
+      authToken = '';
+      if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+      window.location.href = '/report.html';
+    }
+
+    // ====== 頁籤 ======
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach((b, i) => {
+        b.classList.toggle('active', (tab === 'reports' && i === 0) || (tab === 'users' && i === 1));
+      });
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      if (tab === 'users') loadUsers();
+    }
+
+    // ====== 工具 ======
+    function formatDate(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function escHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    }
+
+    // ====== 回報紀錄 ======
+    async function loadSummary() {
+      try {
+        const res = await fetch('/api/summary', { headers: authHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        document.getElementById('stat-users').textContent = data.totalUsers;
+        document.getElementById('stat-reports').textContent = data.totalReports;
+        document.getElementById('stat-rate').textContent = data.reportRate + '%';
+        document.getElementById('stat-all').textContent = data.allUsers;
+      } catch (e) {}
+    }
+
+    async function loadReports(page = 1) {
+      currentPage = page;
+      const date = document.getElementById('filter-date').value;
+      const user = document.getElementById('filter-user').value;
+      const params = new URLSearchParams({ page, limit: 20 });
+      if (date) params.append('date', date);
+      if (user) params.append('user', user);
+
+      try {
+        const res = await fetch('/api/reports?' + params, { headers: authHeaders() });
+        if (!res.ok) return;
+        const { data, total, totalPages } = await res.json();
+        const list = document.getElementById('report-list');
+
+        if (data.length === 0) {
+          list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>沒有找到回報紀錄</p></div>';
+          document.getElementById('pagination').innerHTML = '';
+          return;
+        }
+
+        const grouped = {};
+        data.forEach(r => {
+          const key = r.display_name || '未知';
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push(r);
+        });
+
+        const typeEmoji = {'跑法院':'⚖️','拜訪對照':'🤝','對照和解':'📝','跑警察局':'🏛️','到站找駕駛':'🚌','其他':'📌'};
+
+        list.innerHTML = Object.entries(grouped).map(([name, items]) => {
+          const initial = name[0];
+          const itemsHtml = items.map((r, i) => {
+            const emoji = typeEmoji[r.task_type] || '📌';
+            const gpsHtml = r.gps_latitude
+              ? `<a class="gps-link" href="https://maps.google.com/?q=${r.gps_latitude},${r.gps_longitude}" target="_blank">📍 地圖</a>`
+              : '';
+            const isAdmin = currentUser && currentUser.role === 'admin';
+            const editBtn = `<button class="btn-edit" onclick='openEditModal(${JSON.stringify({id:r.id,task_type:r.task_type||"其他",location:r.location||"",task_description:r.task_description||""}).replace(/'/g,"&#39;")})'>編輯</button>`;
+            const delBtn = isAdmin ? `<button class="btn-del-report" onclick="deleteReport(${r.id})">刪除</button>` : '';
+            return `
+              <div style="display:flex;gap:12px;padding:12px 0;${i < items.length-1 ? 'border-bottom:1px dashed #eee;' : ''}">
+                <div style="text-align:center;min-width:50px">
+                  <div style="font-size:13px;font-weight:600;color:#06c755">${r.report_time}</div>
+                  <div style="font-size:18px;margin-top:2px">${emoji}</div>
+                </div>
+                <div style="flex:1">
+                  <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:2px">${escHtml(r.task_type || '其他')}</div>
+                  <div style="font-size:13px;color:#666">📍 ${escHtml(r.location)} ${gpsHtml}</div>
+                  <div style="font-size:13px;color:#888;margin-top:2px">${escHtml(r.task_description)}</div>
+                  <div class="item-actions">${editBtn}${delBtn}</div>
+                </div>
+              </div>`;
+          }).join('');
+
+          return `
+            <div class="report-card">
+              <div class="report-top">
+                <div class="report-user">
+                  <div class="user-avatar">${escHtml(initial)}</div>
+                  <span class="user-name">${escHtml(name)}</span>
+                </div>
+                <div class="report-datetime">
+                  <div class="rd-date">${items[0].report_date || ''}</div>
+                  <div style="font-size:12px;color:#06c755;font-weight:600">${items.length} 筆回報</div>
+                </div>
+              </div>
+              <div style="padding:0 4px">${itemsHtml}</div>
+            </div>`;
+        }).join('');
+
+        renderPagination(totalPages);
+      } catch (e) {}
+    }
+
+    function renderPagination(totalPages) {
+      const pag = document.getElementById('pagination');
+      if (totalPages <= 1) { pag.innerHTML = ''; return; }
+      let html = `<button ${currentPage === 1 ? 'disabled' : ''} onclick="loadReports(${currentPage - 1})">上一頁</button>`;
+      for (let i = 1; i <= Math.min(totalPages, 10); i++) {
+        html += `<button class="${i === currentPage ? 'active' : ''}" onclick="loadReports(${i})">${i}</button>`;
+      }
+      html += `<button ${currentPage === totalPages ? 'disabled' : ''} onclick="loadReports(${currentPage + 1})">下一頁</button>`;
+      pag.innerHTML = html;
+    }
+
+    function resetFilters() {
+      document.getElementById('filter-date').value = '';
+      document.getElementById('filter-user').value = '';
+      loadReports(1);
+    }
+
+    function exportCSV() {
+      const startDate = document.getElementById('filter-date').value || '';
+      const params = new URLSearchParams();
+      if (startDate) { params.append('startDate', startDate); params.append('endDate', startDate); }
+      window.open('/api/export?' + params, '_blank');
+    }
+
+    // ====== 人員管理 ======
+    async function loadUsers() {
+      try {
+        const res = await fetch('/api/users', { headers: authHeaders() });
+        if (!res.ok) return;
+        const users = await res.json();
+        const tbody = document.getElementById('user-tbody');
+        const isAdmin = currentUser && currentUser.role === 'admin';
+
+        tbody.innerHTML = users.map(u => {
+          const roleBadge = u.role === 'admin'
+            ? '<span class="role-badge role-admin">管理員</span>'
+            : '<span class="role-badge role-user">一般</span>';
+          const deleteBtn = (isAdmin && u.user_id !== 'admin')
+            ? `<button class="btn btn-danger" onclick="deleteUser('${escAttr(u.user_id)}', '${escAttr(u.display_name)}')">刪除</button>`
+            : (u.user_id === 'admin' ? '-' : '<span style="color:#ccc;font-size:12px">需管理員權限</span>');
+          return `<tr>
+            <td>${escHtml(u.user_id)}</td>
+            <td><strong>${escHtml(u.display_name)}</strong></td>
+            <td>${roleBadge}</td>
+            <td style="font-size:13px;color:#888">${u.created_at || '-'}</td>
+            <td>${deleteBtn}</td>
+          </tr>`;
+        }).join('');
+      } catch (e) {}
+    }
+
+    async function deleteUser(userId, displayName) {
+      if (!confirm(`確定要刪除「${displayName}」嗎？\n\n此操作會同時刪除該人員的所有回報紀錄，無法復原！`)) return;
+
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(userId), {
+          method: 'DELETE',
+          headers: authHeaders(),
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || '刪除失敗'); return; }
+        loadUsers();
+        loadSummary();
+      } catch (e) {
+        alert('網路錯誤');
+      }
+    }
+
+    function escAttr(s) {
+      if (!s) return '';
+      return s.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // ====== 編輯回報 ======
+    function openEditModal(data) {
+      document.getElementById('edit-id').value = data.id;
+      document.getElementById('edit-type').value = data.task_type;
+      document.getElementById('edit-location').value = data.location;
+      document.getElementById('edit-task').value = data.task_description;
+      document.getElementById('edit-modal').classList.add('show');
+    }
+
+    function closeEditModal() {
+      document.getElementById('edit-modal').classList.remove('show');
+    }
+
+    async function saveEdit() {
+      const id = document.getElementById('edit-id').value;
+      const taskType = document.getElementById('edit-type').value;
+      const location = document.getElementById('edit-location').value.trim();
+      const task = document.getElementById('edit-task').value.trim();
+
+      if (!location || !task) { alert('地點和處理內容不能為空'); return; }
+
+      const btn = document.getElementById('edit-save-btn');
+      btn.disabled = true;
+      btn.textContent = '儲存中...';
+
+      try {
+        const res = await fetch('/api/reports/' + id, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ taskType, location, task }),
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || '修改失敗'); return; }
+        closeEditModal();
+        loadReports(currentPage);
+      } catch (e) {
+        alert('網路錯誤');
+      }
+      btn.disabled = false;
+      btn.textContent = '儲存';
+    }
+
+    async function deleteReport(id) {
+      if (!confirm('確定要刪除這筆回報紀錄嗎？此操作無法復原！')) return;
+      try {
+        const res = await fetch('/api/reports/' + id, {
+          method: 'DELETE',
+          headers: authHeaders(),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.error || '刪除失敗'); return; }
+        loadReports(currentPage);
+        loadSummary();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    // 點擊背景關閉彈窗
+    document.getElementById('edit-modal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('edit-modal')) closeEditModal();
+    });
+
+    // ====== 後台登入 ======
+    async function adminLogin() {
+      const username = document.getElementById('admin-username').value.trim();
+      const password = document.getElementById('admin-password').value;
+      const errEl = document.getElementById('admin-login-error');
+      errEl.classList.remove('show');
+
+      if (!username || !password) {
+        errEl.textContent = '請輸入帳號和密碼';
+        errEl.classList.add('show');
+        return;
+      }
+
+      const btn = document.getElementById('admin-login-btn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errEl.textContent = data.error;
+          errEl.classList.add('show');
+          btn.disabled = false;
+          return;
+        }
+        authToken = data.token;
+        localStorage.setItem('authToken', authToken);
+        currentUser = { displayName: data.displayName, role: data.role };
+        showMainApp();
+      } catch (e) {
+        errEl.textContent = '網路錯誤，請重試';
+        errEl.classList.add('show');
+      }
+      btn.disabled = false;
+    }
+
+    // Enter 鍵登入
+    document.getElementById('admin-password').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') adminLogin();
+    });
+
+    // ====== 初始化 ======
+    checkAuth();
+  </script>
+</body>
+</html>
