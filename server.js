@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
-const db = require('./database');
+const { db, initDB } = require('./database');
 
 const app = express();
 
@@ -77,7 +77,7 @@ app.use('/report.html', express.static(path.join(__dirname, 'public', 'report.ht
 // ====== 帳號 API ======
 
 // 註冊
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { username, password, displayName } = req.body;
   if (!username || !password || !displayName) {
     return res.status(400).json({ error: '請填寫所有欄位' });
@@ -89,19 +89,21 @@ app.post('/api/register', (req, res) => {
     return res.status(400).json({ error: '密碼至少 4 個字元' });
   }
 
-  // 檢查帳號是否已存在
-  const existing = db.prepare('SELECT user_id FROM users WHERE user_id = ?').get(username.trim());
-  if (existing) {
-    return res.status(400).json({ error: '此帳號已被使用' });
-  }
-
   const userId = username.trim();
   const name = displayName.trim();
   const pwHash = hashPassword(password);
 
   try {
-    db.prepare('INSERT INTO users (user_id, display_name, group_id, password_hash, role) VALUES (?, ?, ?, ?, ?)')
-      .run(userId, name, 'web', pwHash, 'user');
+    // 檢查帳號是否已存在
+    const existing = await db.execute({ sql: 'SELECT user_id FROM users WHERE user_id = ?', args: [userId] });
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: '此帳號已被使用' });
+    }
+
+    await db.execute({
+      sql: 'INSERT INTO users (user_id, display_name, group_id, password_hash, role) VALUES (?, ?, ?, ?, ?)',
+      args: [userId, name, 'web', pwHash, 'user'],
+    });
 
     const token = createSession(userId, name, 'user');
     res.json({ success: true, token, displayName: name, role: 'user' });
@@ -112,23 +114,29 @@ app.post('/api/register', (req, res) => {
 });
 
 // 登入
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: '請輸入帳號和密碼' });
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE user_id = ?').get(username.trim());
-  if (!user || !user.password_hash) {
-    return res.status(401).json({ error: '帳號或密碼錯誤' });
-  }
+  try {
+    const result = await db.execute({ sql: 'SELECT * FROM users WHERE user_id = ?', args: [username.trim()] });
+    const user = result.rows[0];
+    if (!user || !user.password_hash) {
+      return res.status(401).json({ error: '帳號或密碼錯誤' });
+    }
 
-  if (user.password_hash !== hashPassword(password)) {
-    return res.status(401).json({ error: '帳號或密碼錯誤' });
-  }
+    if (user.password_hash !== hashPassword(password)) {
+      return res.status(401).json({ error: '帳號或密碼錯誤' });
+    }
 
-  const token = createSession(user.user_id, user.display_name, user.role || 'user');
-  res.json({ success: true, token, displayName: user.display_name, role: user.role || 'user' });
+    const token = createSession(user.user_id, user.display_name, user.role || 'user');
+    res.json({ success: true, token, displayName: user.display_name, role: user.role || 'user' });
+  } catch (err) {
+    console.error('登入失敗:', err);
+    res.status(500).json({ error: '登入失敗' });
+  }
 });
 
 // 驗證 session
@@ -148,7 +156,7 @@ app.post('/api/logout', (req, res) => {
 // ====== 回報 API ======
 
 // 提交回報
-app.post('/api/submit-report', requireAuth, (req, res) => {
+app.post('/api/submit-report', requireAuth, async (req, res) => {
   const { taskType, location, task, latitude, longitude } = req.body;
   const { userId, displayName } = req.session;
 
@@ -159,13 +167,11 @@ app.post('/api/submit-report', requireAuth, (req, res) => {
   const tw = getTaiwanTime();
 
   try {
-    db.prepare(`
-      INSERT INTO reports (user_id, display_name, group_id, report_date, report_time, task_type, location, task_description, gps_latitude, gps_longitude)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(userId, displayName, 'web',
-      tw.date, tw.time, taskType || '其他',
-      location, task,
-      latitude || null, longitude || null);
+    await db.execute({
+      sql: `INSERT INTO reports (user_id, display_name, group_id, report_date, report_time, task_type, location, task_description, gps_latitude, gps_longitude)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [userId, displayName, 'web', tw.date, tw.time, taskType || '其他', location, task, latitude || null, longitude || null],
+    });
 
     res.json({ success: true, message: '回報成功！' });
   } catch (err) {
@@ -175,40 +181,76 @@ app.post('/api/submit-report', requireAuth, (req, res) => {
 });
 
 // 查詢某人今日回報次數
-app.get('/api/user-today', requireAuth, (req, res) => {
+app.get('/api/user-today', requireAuth, async (req, res) => {
   const { userId } = req.session;
   const tw = getTaiwanTime();
-  const count = db.prepare(
-    'SELECT COUNT(*) as c FROM reports WHERE user_id = ? AND report_date = ?'
-  ).get(userId, tw.date).c;
-  res.json({ count });
+  try {
+    const result = await db.execute({
+      sql: 'SELECT COUNT(*) as c FROM reports WHERE user_id = ? AND report_date = ?',
+      args: [userId, tw.date],
+    });
+    res.json({ count: result.rows[0].c });
+  } catch (err) {
+    res.json({ count: 0 });
+  }
 });
 
 // ====== 後台 API（需要登入）======
 
 // 取得回報紀錄
-app.get('/api/reports', requireAuth, (req, res) => {
+app.get('/api/reports', requireAuth, async (req, res) => {
   const { date, user, page = 1, limit = 50 } = req.query;
   const offset = (page - 1) * limit;
 
   let sql = 'SELECT * FROM reports WHERE 1=1';
+  let countSql = 'SELECT COUNT(*) as total FROM reports WHERE 1=1';
   const params = [];
 
-  if (date) { sql += ' AND report_date = ?'; params.push(date); }
-  if (user) { sql += ' AND (display_name LIKE ? OR user_id = ?)'; params.push(`%${user}%`, user); }
+  if (date) { sql += ' AND report_date = ?'; countSql += ' AND report_date = ?'; params.push(date); }
+  if (user) { sql += ' AND (display_name LIKE ? OR user_id = ?)'; countSql += ' AND (display_name LIKE ? OR user_id = ?)'; params.push(`%${user}%`, user); }
 
-  const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
-  const total = db.prepare(countSql).get(...params).total;
+  try {
+    const countResult = await db.execute({ sql: countSql, args: params });
+    const total = countResult.rows[0].total;
 
-  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-  params.push(Number(limit), Number(offset));
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    const reports = await db.execute({ sql, args: [...params, Number(limit), Number(offset)] });
 
-  const reports = db.prepare(sql).all(...params);
-  res.json({ data: reports, total, page: Number(page), totalPages: Math.ceil(total / limit) });
+    res.json({ data: reports.rows, total, page: Number(page), totalPages: Math.ceil(total / limit) });
+  } catch (err) {
+    console.error('查詢回報失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
+});
+
+// 取得自己的回報紀錄
+app.get('/api/my-reports', requireAuth, async (req, res) => {
+  const { date, page = 1, limit = 50 } = req.query;
+  const { userId } = req.session;
+  const offset = (page - 1) * limit;
+
+  let sql = 'SELECT * FROM reports WHERE user_id = ?';
+  let countSql = 'SELECT COUNT(*) as total FROM reports WHERE user_id = ?';
+  const params = [userId];
+
+  if (date) { sql += ' AND report_date = ?'; countSql += ' AND report_date = ?'; params.push(date); }
+
+  try {
+    const countResult = await db.execute({ sql: countSql, args: params });
+    const total = countResult.rows[0].total;
+
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    const reports = await db.execute({ sql, args: [...params, Number(limit), Number(offset)] });
+
+    res.json({ data: reports.rows, total, page: Number(page), totalPages: Math.ceil(total / limit) });
+  } catch (err) {
+    console.error('查詢我的回報失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
 });
 
 // 取得軌跡資料
-app.get('/api/trajectory', requireAuth, (req, res) => {
+app.get('/api/trajectory', requireAuth, async (req, res) => {
   const { userId, date, startDate, endDate } = req.query;
 
   let sql = 'SELECT * FROM reports WHERE gps_latitude IS NOT NULL';
@@ -223,55 +265,85 @@ app.get('/api/trajectory', requireAuth, (req, res) => {
   }
 
   sql += ' ORDER BY report_date ASC, report_time ASC';
-  const reports = db.prepare(sql).all(...params);
 
-  const withDuration = reports.map((r, i) => {
-    let stayMinutes = null;
-    if (i < reports.length - 1) {
-      const curr = new Date(`${r.report_date}T${r.report_time}:00`);
-      const next = new Date(`${reports[i + 1].report_date}T${reports[i + 1].report_time}:00`);
-      stayMinutes = Math.round((next - curr) / 60000);
-    }
-    return { ...r, stay_minutes: stayMinutes };
-  });
+  try {
+    const result = await db.execute({ sql, args: params });
+    const reports = result.rows;
 
-  res.json(withDuration);
+    const withDuration = reports.map((r, i) => {
+      let stayMinutes = null;
+      if (i < reports.length - 1) {
+        const curr = new Date(`${r.report_date}T${r.report_time}:00`);
+        const next = new Date(`${reports[i + 1].report_date}T${reports[i + 1].report_time}:00`);
+        stayMinutes = Math.round((next - curr) / 60000);
+      }
+      return { ...r, stay_minutes: stayMinutes };
+    });
+
+    res.json(withDuration);
+  } catch (err) {
+    console.error('查詢軌跡失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
 });
 
 // 取得有 GPS 資料的使用者列表
-app.get('/api/gps-users', requireAuth, (req, res) => {
-  const users = db.prepare(`
-    SELECT DISTINCT r.user_id, r.display_name, COUNT(*) as report_count,
-           MIN(r.report_date) as first_date, MAX(r.report_date) as last_date
-    FROM reports r WHERE r.gps_latitude IS NOT NULL
-    GROUP BY r.user_id ORDER BY r.display_name
-  `).all();
-  res.json(users);
+app.get('/api/gps-users', requireAuth, async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: `SELECT DISTINCT r.user_id, r.display_name, COUNT(*) as report_count,
+             MIN(r.report_date) as first_date, MAX(r.report_date) as last_date
+           FROM reports r WHERE r.gps_latitude IS NOT NULL
+           GROUP BY r.user_id ORDER BY r.display_name`,
+      args: [],
+    });
+    res.json(result.rows);
+  } catch (err) {
+    console.error('查詢 GPS 使用者失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
 });
 
 // 取得今日摘要
-app.get('/api/summary', requireAuth, (req, res) => {
+app.get('/api/summary', requireAuth, async (req, res) => {
   const tw = getTaiwanTime();
   const today = tw.date;
 
-  const totalReports = db.prepare('SELECT COUNT(*) as count FROM reports WHERE report_date = ?').get(today).count;
-  const totalUsers = db.prepare('SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ?').get(today).count;
-  const allUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+  try {
+    const r1 = await db.execute({ sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ?', args: [today] });
+    const r2 = await db.execute({ sql: 'SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ?', args: [today] });
+    const r3 = await db.execute({ sql: 'SELECT COUNT(*) as count FROM users', args: [] });
 
-  res.json({
-    today, totalReports, totalUsers, allUsers,
-    reportRate: allUsers > 0 ? Math.round((totalUsers / allUsers) * 100) : 0,
-  });
+    const totalReports = r1.rows[0].count;
+    const totalUsers = r2.rows[0].count;
+    const allUsers = r3.rows[0].count;
+
+    res.json({
+      today, totalReports, totalUsers, allUsers,
+      reportRate: allUsers > 0 ? Math.round((totalUsers / allUsers) * 100) : 0,
+    });
+  } catch (err) {
+    console.error('查詢摘要失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
 });
 
 // 取得所有使用者
-app.get('/api/users', requireAuth, (req, res) => {
-  const users = db.prepare('SELECT user_id, display_name, role, created_at FROM users ORDER BY display_name').all();
-  res.json(users);
+app.get('/api/users', requireAuth, async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: 'SELECT user_id, display_name, role, created_at FROM users ORDER BY display_name',
+      args: [],
+    });
+    res.json(result.rows);
+  } catch (err) {
+    console.error('查詢使用者失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
 });
 
 // 修改回報紀錄
-app.put('/api/reports/:id', requireAuth, (req, res) => {
+app.put('/api/reports/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { taskType, location, task } = req.body;
 
@@ -280,7 +352,8 @@ app.put('/api/reports/:id', requireAuth, (req, res) => {
   }
 
   try {
-    const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(id);
+    const result = await db.execute({ sql: 'SELECT * FROM reports WHERE id = ?', args: [Number(id)] });
+    const report = result.rows[0];
     if (!report) return res.status(404).json({ error: '找不到此回報' });
 
     // 一般人員只能改自己的，管理員可以改所有人的
@@ -288,8 +361,10 @@ app.put('/api/reports/:id', requireAuth, (req, res) => {
       return res.status(403).json({ error: '只能修改自己的回報' });
     }
 
-    db.prepare('UPDATE reports SET task_type = ?, location = ?, task_description = ? WHERE id = ?')
-      .run(taskType || '其他', location, task, id);
+    await db.execute({
+      sql: 'UPDATE reports SET task_type = ?, location = ?, task_description = ? WHERE id = ?',
+      args: [taskType || '其他', location, task, Number(id)],
+    });
 
     res.json({ success: true });
   } catch (err) {
@@ -298,32 +373,12 @@ app.put('/api/reports/:id', requireAuth, (req, res) => {
   }
 });
 
-// 取得自己的回報紀錄
-app.get('/api/my-reports', requireAuth, (req, res) => {
-  const { date, page = 1, limit = 50 } = req.query;
-  const { userId } = req.session;
-  const offset = (page - 1) * limit;
-
-  let sql = 'SELECT * FROM reports WHERE user_id = ?';
-  const params = [userId];
-
-  if (date) { sql += ' AND report_date = ?'; params.push(date); }
-
-  const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
-  const total = db.prepare(countSql).get(...params).total;
-
-  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-  params.push(Number(limit), Number(offset));
-
-  const reports = db.prepare(sql).all(...params);
-  res.json({ data: reports, total, page: Number(page), totalPages: Math.ceil(total / limit) });
-});
-
 // 刪除回報紀錄（自己的或管理員可刪除所有）
-app.delete('/api/reports/:id', requireAuth, (req, res) => {
+app.delete('/api/reports/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
-    const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(id);
+    const result = await db.execute({ sql: 'SELECT * FROM reports WHERE id = ?', args: [Number(id)] });
+    const report = result.rows[0];
     if (!report) return res.status(404).json({ error: '找不到此回報' });
 
     // 一般人員只能刪自己的，管理員可以刪所有人的
@@ -331,7 +386,7 @@ app.delete('/api/reports/:id', requireAuth, (req, res) => {
       return res.status(403).json({ error: '只能刪除自己的回報' });
     }
 
-    db.prepare('DELETE FROM reports WHERE id = ?').run(id);
+    await db.execute({ sql: 'DELETE FROM reports WHERE id = ?', args: [Number(id)] });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: '刪除失敗' });
@@ -339,14 +394,14 @@ app.delete('/api/reports/:id', requireAuth, (req, res) => {
 });
 
 // 刪除人員（管理員限定）
-app.delete('/api/users/:userId', requireAdmin, (req, res) => {
+app.delete('/api/users/:userId', requireAdmin, async (req, res) => {
   const { userId } = req.params;
   if (userId === 'admin') {
     return res.status(400).json({ error: '不能刪除管理員帳號' });
   }
   try {
-    db.prepare('DELETE FROM reports WHERE user_id = ?').run(userId);
-    db.prepare('DELETE FROM users WHERE user_id = ?').run(userId);
+    await db.execute({ sql: 'DELETE FROM reports WHERE user_id = ?', args: [userId] });
+    await db.execute({ sql: 'DELETE FROM users WHERE user_id = ?', args: [userId] });
     res.json({ success: true });
   } catch (err) {
     console.error('刪除人員失敗:', err);
@@ -355,7 +410,7 @@ app.delete('/api/users/:userId', requireAdmin, (req, res) => {
 });
 
 // 匯出 CSV
-app.get('/api/export', (req, res) => {
+app.get('/api/export', async (req, res) => {
   const { startDate, endDate } = req.query;
 
   let sql = 'SELECT * FROM reports WHERE 1=1';
@@ -365,18 +420,25 @@ app.get('/api/export', (req, res) => {
   if (endDate) { sql += ' AND report_date <= ?'; params.push(endDate); }
 
   sql += ' ORDER BY created_at DESC';
-  const reports = db.prepare(sql).all(...params);
 
-  const BOM = '﻿';
-  let csv = BOM + '日期,時間,姓名,事項類型,地點,處理事項,GPS緯度,GPS經度,Google地圖連結\n';
-  for (const r of reports) {
-    const gpsLink = r.gps_latitude ? `https://maps.google.com/?q=${r.gps_latitude},${r.gps_longitude}` : '';
-    csv += `"${r.report_date}","${r.report_time}","${r.display_name}","${r.task_type || ''}","${(r.location || '').replace(/"/g, '""')}","${(r.task_description || '').replace(/"/g, '""')}","${r.gps_latitude || ''}","${r.gps_longitude || ''}","${gpsLink}"\n`;
+  try {
+    const result = await db.execute({ sql, args: params });
+    const reports = result.rows;
+
+    const BOM = '﻿';
+    let csv = BOM + '日期,時間,姓名,事項類型,地點,處理事項,GPS緯度,GPS經度,Google地圖連結\n';
+    for (const r of reports) {
+      const gpsLink = r.gps_latitude ? `https://maps.google.com/?q=${r.gps_latitude},${r.gps_longitude}` : '';
+      csv += `"${r.report_date}","${r.report_time}","${r.display_name}","${r.task_type || ''}","${(r.location || '').replace(/"/g, '""')}","${(r.task_description || '').replace(/"/g, '""')}","${r.gps_latitude || ''}","${r.gps_longitude || ''}","${gpsLink}"\n`;
+    }
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=reports_${startDate || 'all'}_${endDate || 'all'}.csv`);
+    res.send(csv);
+  } catch (err) {
+    console.error('匯出失敗:', err);
+    res.status(500).json({ error: '匯出失敗' });
   }
-
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename=reports_${startDate || 'all'}_${endDate || 'all'}.csv`);
-  res.send(csv);
 });
 
 // 首頁導向回報頁
@@ -384,18 +446,31 @@ app.get('/', (req, res) => {
   res.redirect('/report.html');
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+// ====== 啟動伺服器 ======
+async function startServer() {
+  // 初始化資料庫表
+  await initDB();
+
   // 自動建立預設管理員帳號（如果不存在）
-  const admin = db.prepare('SELECT user_id FROM users WHERE role = ?').get('admin');
-  if (!admin) {
+  const adminResult = await db.execute({ sql: 'SELECT user_id FROM users WHERE role = ?', args: ['admin'] });
+  if (adminResult.rows.length === 0) {
     const pwHash = hashPassword('admin123');
-    db.prepare('INSERT OR IGNORE INTO users (user_id, display_name, group_id, password_hash, role) VALUES (?, ?, ?, ?, ?)')
-      .run('admin', '管理員', 'web', pwHash, 'admin');
+    await db.execute({
+      sql: 'INSERT OR IGNORE INTO users (user_id, display_name, group_id, password_hash, role) VALUES (?, ?, ?, ?, ?)',
+      args: ['admin', '管理員', 'web', pwHash, 'admin'],
+    });
     console.log('已建立預設管理員帳號: admin / admin123');
   }
 
-  console.log(`伺服器啟動於 http://localhost:${PORT}`);
-  console.log(`回報頁面: http://localhost:${PORT}/report.html`);
-  console.log(`管理後台: http://localhost:${PORT}/admin`);
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`伺服器啟動於 http://localhost:${PORT}`);
+    console.log(`回報頁面: http://localhost:${PORT}/report.html`);
+    console.log(`管理後台: http://localhost:${PORT}/admin`);
+  });
+}
+
+startServer().catch(err => {
+  console.error('啟動失敗:', err);
+  process.exit(1);
 });
