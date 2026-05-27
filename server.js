@@ -890,7 +890,7 @@ app.get('/api/last-locations', requireAuth, async (req, res) => {
   try {
     const result = await db.execute({
       sql: `SELECT r.user_id, r.display_name, r.report_date, r.report_time,
-              r.location, r.task_type, r.gps_latitude, r.gps_longitude
+              r.location, r.task_type, r.gps_latitude, r.gps_longitude, r.created_at
             FROM reports r
             INNER JOIN (
               SELECT user_id, MAX(created_at) as max_created

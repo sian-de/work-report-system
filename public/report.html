@@ -394,6 +394,33 @@
     }
     .records-summary strong { color: #06c755; }
 
+    /* ====== 紀錄/報表 Tab 切換 ====== */
+    .tab-switch-bar {
+      display: flex;
+      background: #e8e8e8;
+      border-radius: 12px;
+      padding: 3px;
+      margin-bottom: 14px;
+    }
+    .tab-sw {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      color: #888;
+      transition: all 0.2s;
+      -webkit-appearance: none;
+    }
+    .tab-sw.active {
+      background: white;
+      color: #333;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+
     /* ====== 日報表功能 ====== */
     .report-section {
       background: white;
@@ -867,54 +894,62 @@
         <button onclick="doLogout()">登出</button>
       </div>
 
-      <div class="filter-bar">
-        <input type="date" id="filter-date" />
-        <button class="filter-btn" onclick="loadMyRecords()">查詢</button>
-        <button class="filter-btn-clear" onclick="clearFilter()">全部</button>
+      <!-- 紀錄查詢 -->
+      <div class="tab-switch-bar">
+        <button class="tab-sw active" id="sw-records" onclick="switchRecordTab('records')">📋 紀錄查詢</button>
+        <button class="tab-sw" id="sw-report" onclick="switchRecordTab('report')">📊 日報表</button>
       </div>
 
-      <!-- 日報表區塊 -->
-      <div class="report-section">
-        <h3>📊 產生日報表</h3>
-        <div class="report-range-bar">
-          <input type="date" id="report-start" />
-          <span>至</span>
-          <input type="date" id="report-end" />
+      <!-- 紀錄查詢 Tab -->
+      <div id="records-tab-content">
+        <div class="filter-bar">
+          <input type="date" id="filter-date" />
+          <button class="filter-btn" onclick="loadMyRecords()">查詢</button>
+          <button class="filter-btn-clear" onclick="clearFilter()">全部</button>
         </div>
-        <div class="report-action-bar no-print">
-          <button class="btn-preview" onclick="generateReport()">📊 預覽報表</button>
-          <button class="btn-excel" onclick="exportReportExcel()">📥 Excel</button>
-          <button class="btn-print" onclick="printReport()">🖨️ 列印</button>
+        <div class="records-summary" id="records-summary" style="display:none">
+          共 <strong id="records-total">0</strong> 筆紀錄
         </div>
+        <div id="records-list"></div>
       </div>
 
-      <div class="report-preview" id="report-preview">
-        <div class="print-area" id="print-area">
-          <div id="report-header-info" style="text-align:center;margin-bottom:16px;display:none">
-            <h2 style="font-size:18px;color:#333" id="report-title"></h2>
-            <p style="font-size:13px;color:#888" id="report-subtitle"></p>
+      <!-- 日報表 Tab -->
+      <div id="report-tab-content" style="display:none">
+        <div class="report-section">
+          <div class="report-range-bar">
+            <input type="date" id="report-start" />
+            <span>至</span>
+            <input type="date" id="report-end" />
           </div>
-          <div class="report-stats no-print" id="report-stats"></div>
-          <div class="report-section no-print" style="margin-bottom:0">
-            <h3>📋 各類型統計</h3>
-            <div class="type-stats" id="report-type-stats"></div>
+          <div class="report-action-bar no-print">
+            <button class="btn-preview" onclick="generateReport()">📊 預覽</button>
+            <button class="btn-excel" onclick="exportReportExcel()">📥 Excel</button>
+            <button class="btn-print" onclick="printReport()">🖨️ 列印</button>
           </div>
-          <div style="margin-top:14px">
-            <div class="report-table-wrap">
-              <table class="report-table" id="report-table">
-                <thead id="report-thead"></thead>
-                <tbody id="report-tbody"></tbody>
-              </table>
+        </div>
+
+        <div class="report-preview" id="report-preview">
+          <div class="print-area" id="print-area">
+            <div id="report-header-info" style="text-align:center;margin-bottom:16px;display:none">
+              <h2 style="font-size:18px;color:#333" id="report-title"></h2>
+              <p style="font-size:13px;color:#888" id="report-subtitle"></p>
+            </div>
+            <div class="report-stats no-print" id="report-stats"></div>
+            <div class="report-section no-print" style="margin-bottom:0">
+              <h3>📋 各類型統計</h3>
+              <div class="type-stats" id="report-type-stats"></div>
+            </div>
+            <div style="margin-top:14px">
+              <div class="report-table-wrap">
+                <table class="report-table" id="report-table">
+                  <thead id="report-thead"></thead>
+                  <tbody id="report-tbody"></tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
       </div>
-
-      <div class="records-summary" id="records-summary" style="display:none">
-        共 <strong id="records-total">0</strong> 筆紀錄
-      </div>
-
-      <div id="records-list"></div>
     </div>
 
     <!-- 底部導航 -->
@@ -1407,6 +1442,40 @@
     let teamMap = null;
     let teamMarkers = [];
 
+    function timeAgo(dateStr, timeStr) {
+      if (!dateStr) return '未知';
+      try {
+        const dt = new Date(dateStr + 'T' + (timeStr || '00:00') + ':00');
+        const now = new Date();
+        const diff = now - dt;
+        if (diff < 0) return '剛剛';
+        const mins = Math.floor(diff / 60000);
+        if (mins < 1) return '剛剛';
+        if (mins < 60) return mins + ' 分鐘前';
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) return hours + ' 小時前';
+        const days = Math.floor(hours / 24);
+        return days + ' 天前';
+      } catch(e) { return '未知'; }
+    }
+
+    function offsetOverlap(data) {
+      // 偵測重疊座標，加微小偏移
+      const seen = {};
+      return data.map(p => {
+        if (!p.gps_latitude || !p.gps_longitude) return p;
+        const key = Number(p.gps_latitude).toFixed(4) + ',' + Number(p.gps_longitude).toFixed(4);
+        if (!seen[key]) seen[key] = 0;
+        const offset = seen[key] * 0.0003; // 約 30 公尺偏移
+        seen[key]++;
+        const angle = (seen[key] - 1) * (2.4); // 黃金角
+        return { ...p,
+          _lat: Number(p.gps_latitude) + offset * Math.cos(angle),
+          _lng: Number(p.gps_longitude) + offset * Math.sin(angle),
+        };
+      });
+    }
+
     async function loadTeamMap() {
       if (!teamMap) {
         teamMap = L.map('team-map').setView([25.033, 121.565], 12);
@@ -1415,7 +1484,6 @@
           maxZoom: 18,
         }).addTo(teamMap);
       }
-      // 清除舊標記
       teamMarkers.forEach(m => teamMap.removeLayer(m));
       teamMarkers = [];
 
@@ -1424,32 +1492,43 @@
           headers: { 'Authorization': 'Bearer ' + authToken },
         });
         if (!res.ok) return;
-        const data = await res.json();
+        const rawData = await res.json();
 
-        if (data.length === 0) return;
+        if (rawData.length === 0) return;
 
+        const data = offsetOverlap(rawData);
         const bounds = [];
+
         data.forEach(p => {
           if (!p.gps_latitude || !p.gps_longitude) return;
-          const lat = Number(p.gps_latitude);
-          const lng = Number(p.gps_longitude);
+          const lat = p._lat || Number(p.gps_latitude);
+          const lng = p._lng || Number(p.gps_longitude);
           bounds.push([lat, lng]);
 
           const isMe = currentUser && p.user_id === currentUser.userId;
+          const ago = timeAgo(p.report_date, p.report_time);
+          const typeBadge = p.task_type || '';
+          const bgColor = isMe ? '#4a90d9' : '#06c755';
+
           const icon = L.divIcon({
             className: '',
-            html: `<div style="background:${isMe ? '#4a90d9' : '#06c755'};color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">${(p.display_name || '?')[0]}</div>`,
-            iconSize: [32, 32],
-            iconAnchor: [16, 16],
+            html: `<div style="position:relative">
+              <div style="background:${bgColor};color:white;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35)">${escHtml((p.display_name || '?')[0])}</div>
+              <div style="position:absolute;top:-8px;left:28px;background:white;border:1px solid #ddd;border-radius:6px;padding:1px 5px;font-size:10px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.15)">${escHtml(p.display_name || '')}</div>
+              <div style="position:absolute;top:30px;left:50%;transform:translateX(-50%);background:${bgColor};border-radius:4px;padding:1px 5px;font-size:9px;color:white;white-space:nowrap;opacity:0.9">${escHtml(typeBadge)}</div>
+            </div>`,
+            iconSize: [36, 36],
+            iconAnchor: [18, 18],
           });
 
-          const marker = L.marker([lat, lng], { icon }).addTo(teamMap);
+          const marker = L.marker([lat, lng], { icon, zIndexOffset: isMe ? 1000 : 0 }).addTo(teamMap);
           marker.bindPopup(`
-            <div style="font-family:-apple-system,sans-serif;min-width:150px">
-              <div style="font-weight:700;font-size:14px;margin-bottom:4px">${p.display_name || '未知'}${isMe ? ' (我)' : ''}</div>
-              <div style="font-size:12px;color:#666;margin-bottom:2px">📅 ${p.report_date} ${p.report_time}</div>
-              <div style="font-size:12px;color:#666;margin-bottom:2px">📋 ${p.task_type || ''}</div>
-              <div style="font-size:12px;color:#666">📍 ${p.location || ''}</div>
+            <div style="font-family:-apple-system,sans-serif;min-width:170px">
+              <div style="font-weight:700;font-size:15px;margin-bottom:6px;color:${bgColor}">${escHtml(p.display_name || '未知')}${isMe ? ' (我)' : ''}</div>
+              <div style="font-size:12px;color:#666;margin-bottom:3px">📋 <strong>${escHtml(p.task_type || '未分類')}</strong></div>
+              <div style="font-size:12px;color:#666;margin-bottom:3px">📍 ${escHtml(p.location || '未填寫')}</div>
+              <div style="font-size:12px;color:#666;margin-bottom:3px">📅 ${escHtml(p.report_date || '')} ${escHtml(p.report_time || '')}</div>
+              <div style="font-size:12px;color:#ff9800;font-weight:600">⏱️ ${ago}</div>
             </div>
           `);
           teamMarkers.push(marker);
@@ -1459,7 +1538,6 @@
           teamMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
         }
 
-        // 修正 Leaflet 在 display:none 後顯示的 tile 問題
         setTimeout(() => teamMap.invalidateSize(), 200);
       } catch (e) {
         console.error('載入同事位置失敗:', e);
@@ -1639,6 +1717,14 @@
         alert('網路錯誤，請重試');
       }
       btn.disabled = false;
+    }
+
+    // ====== 紀錄/報表 Tab 切換 ======
+    function switchRecordTab(tab) {
+      document.getElementById('records-tab-content').style.display = tab === 'records' ? '' : 'none';
+      document.getElementById('report-tab-content').style.display = tab === 'report' ? '' : 'none';
+      document.getElementById('sw-records').className = 'tab-sw' + (tab === 'records' ? ' active' : '');
+      document.getElementById('sw-report').className = 'tab-sw' + (tab === 'report' ? ' active' : '');
     }
 
     // ====== 日報表功能 ======
