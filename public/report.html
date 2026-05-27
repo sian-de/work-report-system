@@ -206,17 +206,6 @@
     .submit-btn:active { transform: scale(0.98); }
     .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    .today-count {
-      text-align: center;
-      font-size: 13px;
-      color: #888;
-      margin-bottom: 14px;
-      padding: 8px;
-      background: #f8f9fa;
-      border-radius: 10px;
-    }
-    .today-count strong { color: #06c755; }
-
     .user-bar {
       display: flex;
       justify-content: space-between;
@@ -707,6 +696,95 @@
       .type-btn { font-size: 11px; padding: 8px 2px; }
       .auth-card { padding: 20px 16px; }
     }
+
+    /* ====== 快速回報區 ====== */
+    .quick-report { margin-bottom: 14px; }
+    .quick-report-title { font-size: 13px; color: #888; margin-bottom: 8px; font-weight: 600; }
+    .quick-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: white;
+      border: 2px solid #e8e8e8;
+      border-radius: 12px;
+      padding: 10px 14px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+      -webkit-appearance: none;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+    }
+    .quick-card:active { transform: scale(0.98); border-color: #06c755; }
+    .quick-card .qc-type { font-size: 13px; font-weight: 600; color: #06c755; white-space: nowrap; }
+    .quick-card .qc-detail { flex: 1; font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .quick-card .qc-arrow { color: #ccc; font-size: 14px; }
+
+    /* ====== 空狀態 ====== */
+    .empty-fancy {
+      text-align: center;
+      padding: 50px 20px;
+      color: #bbb;
+    }
+    .empty-fancy .ef-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.6; }
+    .empty-fancy .ef-text { font-size: 15px; color: #999; }
+    .empty-fancy .ef-hint { font-size: 12px; color: #ccc; margin-top: 6px; }
+
+    /* ====== 深色模式 ====== */
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a2e; color: #e0e0e0; }
+      .header { background: linear-gradient(135deg, #05a045, #038a3a); }
+      .auth-card, .gps-card, .input-group, .record-card, .report-section, .modal-box {
+        background: #16213e; color: #e0e0e0;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      }
+      .auth-field input, input[type="text"], textarea, .filter-bar input[type="date"],
+      .report-range-bar input[type="date"] {
+        background: #0f3460; color: #e0e0e0; border-color: #1a3a5c;
+      }
+      .auth-field input::placeholder, input::placeholder, textarea::placeholder { color: #7a8ba0; }
+      .type-btn { background: #16213e; border-color: #1a3a5c; color: #ccc; }
+      .type-btn.active { background: #0a3d2a; border-color: #06c755; color: #06c755; }
+      .user-bar { background: #16213e; }
+      .user-bar .ub-name { color: #bbb; }
+      .bottom-nav { background: #16213e; border-color: #1a3a5c; }
+      .nav-item { color: #666; }
+      .nav-item.active { color: #06c755; }
+      .records-container { color: #e0e0e0; }
+      .record-top .record-datetime { color: #888; }
+      .record-body { color: #ccc; }
+      .record-body .rb-label { color: #777; }
+      .record-actions { border-color: #1a3a5c; }
+      .gps-loading { background: #2a2000; color: #ffa000; }
+      .gps-success { background: #002a00; color: #4caf50; }
+      .gps-error { background: #2a0000; color: #ef5350; }
+      .gps-coords { color: #777; }
+      .tab-switch-bar { background: #0f3460; }
+      .tab-sw { color: #888; }
+      .tab-sw.active { background: #16213e; color: #e0e0e0; }
+      .records-summary { background: #16213e; color: #888; }
+      .filter-btn { background: #06c755; }
+      .filter-btn-clear { background: #0f3460; color: #999; }
+      .success-detail { background: #16213e; }
+      .sd-label { color: #777 !important; }
+      .sd-value { color: #ccc !important; }
+      .auth-switch { color: #888; }
+      .auth-error { background: #3a0000; color: #ef5350; }
+      .modal-overlay { background: rgba(0,0,0,0.7); }
+      .confirm-box { background: #16213e; color: #e0e0e0; }
+      .report-table th { background: #05a045; }
+      .report-table td { border-color: #1a3a5c; color: #ccc; }
+      .report-table tr:nth-child(even) { background: #0f3460; }
+      .report-table .date-group { background: #0a3d2a; }
+      .stat-box { background: #0f3460; }
+      .stat-box.highlight { background: #0a3d2a; }
+      .stat-box .stat-label { color: #888; }
+      .type-stat-row { border-color: #1a3a5c; color: #ccc; }
+      .type-stat-bar { background: #1a3a5c; }
+      .quick-card { background: #16213e; border-color: #1a3a5c; }
+      .quick-card .qc-detail { color: #999; }
+    }
   </style>
 </head>
 <body>
@@ -821,6 +899,10 @@
           <div class="af-label">時間</div>
           <div class="af-value" id="auto-time">-</div>
         </div>
+        <div class="auto-field" id="today-count" style="display:none">
+          <div class="af-label">今日已回報</div>
+          <div class="af-value" id="count-num" style="color:#fff">0 筆</div>
+        </div>
       </div>
     </div>
 
@@ -833,8 +915,10 @@
         </div>
       </div>
 
-      <div class="today-count" id="today-count" style="display:none">
-        今日已回報 <strong id="count-num">0</strong> 次
+      <!-- 快速回報區 -->
+      <div class="quick-report" id="quick-report" style="display:none">
+        <div class="quick-report-title">⚡ 快速回報（最近紀錄）</div>
+        <div id="quick-report-list"></div>
       </div>
 
       <div class="gps-card">
@@ -1049,8 +1133,8 @@
     <div class="success-title">回報成功！</div>
     <div class="success-msg">資料已儲存</div>
     <div class="success-detail" id="success-detail"></div>
-    <button class="btn-again" onclick="resetForm()">繼續回報下一筆</button>
-    <div class="success-msg" style="margin-top:12px">或關閉此頁面</div>
+    <button class="btn-again" onclick="resetForm()">繼續回報下一筆 <span id="countdown-text"></span></button>
+    <div class="success-msg" style="margin-top:12px;color:#aaa;font-size:12px">將在 <span id="countdown-sec">5</span> 秒後自動返回</div>
   </div>
 
   <script>
@@ -1250,6 +1334,43 @@
       getGPS();
       loadTodayCount();
       loadTaskTypes();
+      loadQuickReports();
+    }
+
+    // ====== 快速回報（最近紀錄） ======
+    async function loadQuickReports() {
+      try {
+        const res = await fetch('/api/my-reports?limit=3', {
+          headers: { 'Authorization': 'Bearer ' + authToken },
+        });
+        if (!res.ok) return;
+        const result = await res.json();
+        if (!result.data || result.data.length === 0) {
+          document.getElementById('quick-report').style.display = 'none';
+          return;
+        }
+        document.getElementById('quick-report').style.display = '';
+        document.getElementById('quick-report-list').innerHTML = result.data.map(r => `
+          <button class="quick-card" onclick="fillQuickReport('${escAttr(r.task_type || '')}', '${escAttr(r.location || '')}', '${escAttr(r.task_description || '')}')">
+            <span class="qc-type">${escHtml(r.task_type || '其他')}</span>
+            <span class="qc-detail">📍 ${escHtml(r.location || '')} - ${escHtml(r.task_description || '')}</span>
+            <span class="qc-arrow">›</span>
+          </button>
+        `).join('');
+      } catch(e) {}
+    }
+
+    function fillQuickReport(type, location, task) {
+      // 選擇類型
+      selectedType = type;
+      document.querySelectorAll('.type-btn').forEach(b => {
+        b.classList.toggle('active', b.textContent.trim().includes(type));
+      });
+      // 填入地點和內容
+      document.getElementById('input-location').value = location.replace(/\\n/g, '\n');
+      document.getElementById('input-task').value = task.replace(/\\n/g, '\n');
+      // 滑動到表單
+      document.getElementById('input-location').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     // ====== 自動檢查登入狀態 ======
@@ -1280,12 +1401,8 @@
           headers: { 'Authorization': 'Bearer ' + authToken },
         });
         const data = await res.json();
-        if (data.count > 0) {
-          document.getElementById('today-count').style.display = 'block';
-          document.getElementById('count-num').textContent = data.count;
-        } else {
-          document.getElementById('today-count').style.display = 'none';
-        }
+        document.getElementById('today-count').style.display = '';
+        document.getElementById('count-num').textContent = data.count + ' 筆';
       } catch(e) {}
     }
 
@@ -1379,6 +1496,7 @@
       }
     }
 
+    let countdownTimer = null;
     function showSuccessScreen(location, task) {
       showScreen('success-screen');
       const dateStr = document.getElementById('auto-date').textContent;
@@ -1393,9 +1511,23 @@
         <div class="sd-row"><div class="sd-label">📝 內容</div><div class="sd-value">${escHtml(task)}</div></div>
         <div class="sd-row"><div class="sd-label">🛰️ GPS</div><div class="sd-value">${gpsStr}</div></div>
       `;
+      // 倒數自動返回
+      if (countdownTimer) clearInterval(countdownTimer);
+      let sec = 5;
+      document.getElementById('countdown-sec').textContent = sec;
+      countdownTimer = setInterval(() => {
+        sec--;
+        document.getElementById('countdown-sec').textContent = sec;
+        if (sec <= 0) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          resetForm();
+        }
+      }, 1000);
     }
 
     function resetForm() {
+      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
       showScreen('form-screen');
       document.getElementById('input-location').value = '';
       document.getElementById('input-task').value = '';
@@ -1603,7 +1735,7 @@
         const result = await res.json();
 
         if (!result.data || result.data.length === 0) {
-          listEl.innerHTML = '<div class="records-empty">📭 沒有紀錄</div>';
+          listEl.innerHTML = '<div class="empty-fancy"><div class="ef-icon">📭</div><div class="ef-text">此期間沒有紀錄</div><div class="ef-hint">切換到「回報」頁面新增工作回報</div></div>';
           document.getElementById('records-summary').style.display = 'none';
           return;
         }

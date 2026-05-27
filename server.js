@@ -578,7 +578,7 @@ app.get('/api/user-today', requireAuth, async (req, res) => {
 
 // 取得回報紀錄
 app.get('/api/reports', requireAuth, async (req, res) => {
-  const { date, user, page = 1, limit = 50 } = req.query;
+  const { date, user, keyword, page = 1, limit = 50 } = req.query;
   const offset = (page - 1) * limit;
 
   let sql = 'SELECT * FROM reports WHERE 1=1';
@@ -602,6 +602,7 @@ app.get('/api/reports', requireAuth, async (req, res) => {
 
   if (date) { sql += ' AND report_date = ?'; countSql += ' AND report_date = ?'; params.push(date); }
   if (user) { sql += ' AND (display_name LIKE ? OR user_id = ?)'; countSql += ' AND (display_name LIKE ? OR user_id = ?)'; params.push(`%${user}%`, user); }
+  if (keyword) { sql += ' AND (location LIKE ? OR task_description LIKE ?)'; countSql += ' AND (location LIKE ? OR task_description LIKE ?)'; params.push(`%${keyword}%`, `%${keyword}%`); }
 
   try {
     const countResult = await db.execute({ sql: countSql, args: params });

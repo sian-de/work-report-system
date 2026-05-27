@@ -522,6 +522,54 @@
       .tab-btn { padding: 8px 6px; font-size: 12px; }
       .navbar h1 { font-size: 14px; }
     }
+
+    /* ====== 深色模式 ====== */
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a2e; color: #e0e0e0; }
+      .navbar { background: linear-gradient(135deg, #05a045, #038a3a); }
+      .container { color: #e0e0e0; }
+      .tabs { background: #16213e; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+      .tab-btn { color: #888; }
+      .tab-btn:hover:not(.active) { background: #0f3460; }
+      .stat-card { background: #16213e; box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+      .filter-bar { background: #16213e; box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+      .filter-bar label { color: #bbb; }
+      .filter-bar input, .filter-bar select { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
+      .filter-bar input::placeholder { color: #7a8ba0; }
+      .report-card { background: #16213e; border-left-color: #06c755; box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+      .report-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+      .user-name { color: #e0e0e0; }
+      .report-datetime { color: #888; }
+      .report-datetime .rd-date { color: #aaa; }
+      .user-card { background: #16213e; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+      .user-card-name { color: #e0e0e0; }
+      .user-card-id { color: #777; }
+      .user-card-controls label { color: #999; }
+      .user-card-controls select { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
+      .user-card-actions { border-color: #1a3a5c; }
+      .type-item, .group-card { background: #16213e; box-shadow: 0 2px 8px rgba(0,0,0,0.3); color: #e0e0e0; }
+      .type-name { color: #e0e0e0; }
+      .group-name { color: #e0e0e0; }
+      .member-row { border-color: #1a3a5c; }
+      .modal-box { background: #16213e; color: #e0e0e0; }
+      .modal-field input, .modal-field textarea, .modal-field select { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
+      .pagination button { background: #16213e; color: #e0e0e0; border-color: #1a3a5c; }
+      .pagination button.active { background: #06c755; color: white; }
+      .empty-state { color: #666; }
+      .login-card { background: #16213e; }
+      .login-card .lc-title { color: #e0e0e0; }
+      .login-card .lc-field label { color: #bbb; }
+      .login-card .lc-field input { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
+      .login-card .lc-error { background: #3a0000; color: #ef5350; }
+      .status-card { background: #16213e; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+      .status-name { color: #e0e0e0; }
+      .status-detail { color: #999; }
+      .status-summary-card { background: #16213e; }
+      .add-form { background: #16213e; }
+      .add-form-row input { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
+      .mgmt-header h2 { color: #e0e0e0; }
+      .assign-bar select { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
+    }
   </style>
 </head>
 <body>
@@ -596,7 +644,9 @@
           <label>日期</label>
           <input type="date" id="filter-date" />
           <label>姓名</label>
-          <input type="text" id="filter-user" placeholder="搜尋..." />
+          <input type="text" id="filter-user" placeholder="姓名..." style="width:100px" />
+          <label>關鍵字</label>
+          <input type="text" id="filter-keyword" placeholder="地點/內容..." style="width:120px" />
           <button class="btn btn-primary" onclick="loadReports()">查詢</button>
           <button class="btn btn-secondary" onclick="resetFilters()">重設</button>
           <span class="spacer"></span>
@@ -822,9 +872,11 @@
       currentPage = page;
       const date = document.getElementById('filter-date').value;
       const user = document.getElementById('filter-user').value;
+      const keyword = document.getElementById('filter-keyword').value;
       const params = new URLSearchParams({ page, limit: 20 });
       if (date) params.append('date', date);
       if (user) params.append('user', user);
+      if (keyword) params.append('keyword', keyword);
 
       try {
         const res = await fetch('/api/reports?' + params, { headers: authHeaders() });
@@ -904,6 +956,7 @@
     function resetFilters() {
       document.getElementById('filter-date').value = '';
       document.getElementById('filter-user').value = '';
+      document.getElementById('filter-keyword').value = '';
       loadReports(1);
     }
 
