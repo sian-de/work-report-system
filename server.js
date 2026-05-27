@@ -230,10 +230,16 @@ app.post('/api/login', authLimiter, async (req, res) => {
 });
 
 // 驗證 session
-app.get('/api/me', (req, res) => {
+app.get('/api/me', async (req, res) => {
   const session = getSession(req);
   if (!session) return res.status(401).json({ error: '未登入' });
-  res.json({ userId: session.userId, displayName: session.displayName, role: session.role });
+  try {
+    const result = await db.execute({ sql: 'SELECT is_supervisor FROM users WHERE user_id = ?', args: [session.userId] });
+    const isSupervisor = result.rows[0]?.is_supervisor ? true : false;
+    res.json({ userId: session.userId, displayName: session.displayName, role: session.role, isSupervisor });
+  } catch (e) {
+    res.json({ userId: session.userId, displayName: session.displayName, role: session.role, isSupervisor: false });
+  }
 });
 
 // 登出

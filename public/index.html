@@ -772,14 +772,24 @@
     }
 
     function showMainApp() {
+      const isAdmin = currentUser.role === 'admin';
+      const isSupervisor = currentUser.isSupervisor;
+
+      // 一般職員不能進後台
+      if (!isAdmin && !isSupervisor) {
+        alert('此頁面僅限管理員和主管使用');
+        window.location.href = '/report.html';
+        return;
+      }
+
       document.getElementById('login-prompt').style.display = 'none';
       document.getElementById('main-app').style.display = 'block';
-      document.getElementById('nav-user').textContent = currentUser.displayName;
+      document.getElementById('nav-user').textContent = currentUser.displayName + (isAdmin ? '（管理員）' : '（主管）');
       document.getElementById('today-date').textContent = formatDate(new Date());
       document.getElementById('filter-date').value = formatDate(new Date());
 
       // 管理員才顯示類型管理和分組管理頁籤
-      if (currentUser.role === 'admin') {
+      if (isAdmin) {
         document.getElementById('tab-btn-types').style.display = '';
         document.getElementById('tab-btn-groups').style.display = '';
       }
