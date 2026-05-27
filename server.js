@@ -620,7 +620,7 @@ app.get('/api/reports', requireAuth, async (req, res) => {
 
 // 取得自己的回報紀錄
 app.get('/api/my-reports', requireAuth, async (req, res) => {
-  const { date, page = 1, limit = 50 } = req.query;
+  const { date, startDate, endDate, page = 1, limit = 50 } = req.query;
   const { userId } = req.session;
   const offset = (page - 1) * limit;
 
@@ -629,10 +629,19 @@ app.get('/api/my-reports', requireAuth, async (req, res) => {
   const params = [userId];
 
   if (date) { sql += ' AND report_date = ?'; countSql += ' AND report_date = ?'; params.push(date); }
+  if (startDate) { sql += ' AND report_date >= ?'; countSql += ' AND report_date >= ?'; params.push(startDate); }
+  if (endDate) { sql += ' AND report_date <= ?'; countSql += ' AND report_date <= ?'; params.push(endDate); }
 
   try {
     const countResult = await db.execute({ sql: countSql, args: params });
     const total = countResult.rows[0].total;
+
+    // 報表模式：不分頁，全部回傳（limit=0）
+    if (Number(limit) === 0) {
+      sql += ' ORDER BY report_date ASC, report_time ASC';
+      const reports = await db.execute({ sql, args: params });
+      return res.json({ data: reports.rows, total });
+    }
 
     sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     const reports = await db.execute({ sql, args: [...params, Number(limit), Number(offset)] });

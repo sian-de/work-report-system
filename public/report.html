@@ -394,6 +394,133 @@
     }
     .records-summary strong { color: #06c755; }
 
+    /* ====== 日報表功能 ====== */
+    .report-section {
+      background: white;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    .report-section h3 { font-size: 15px; margin-bottom: 12px; color: #333; }
+    .report-range-bar {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .report-range-bar input[type="date"] {
+      flex: 1;
+      min-width: 120px;
+      padding: 9px 10px;
+      border: 2px solid #e8e8e8;
+      border-radius: 10px;
+      font-size: 13px;
+      -webkit-appearance: none;
+    }
+    .report-range-bar input:focus { outline: none; border-color: #06c755; }
+    .report-range-bar span { font-size: 13px; color: #999; }
+    .report-action-bar {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .report-action-bar button {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-appearance: none;
+    }
+    .btn-preview { background: #06c755; color: white; }
+    .btn-excel { background: #1976d2; color: white; }
+    .btn-print { background: #ff9800; color: white; }
+
+    /* 報表預覽區 */
+    .report-preview { display: none; margin-top: 14px; }
+    .report-preview.show { display: block; }
+    .report-stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat-box {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+    }
+    .stat-box .stat-num { font-size: 24px; font-weight: 700; color: #06c755; }
+    .stat-box .stat-label { font-size: 12px; color: #888; margin-top: 2px; }
+    .stat-box.highlight { background: #e8f5e9; }
+    .type-stats { margin-bottom: 16px; }
+    .type-stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-bottom: 1px solid #f0f2f5;
+      font-size: 14px;
+    }
+    .type-stat-row:last-child { border-bottom: none; }
+    .type-stat-bar {
+      height: 6px;
+      background: #e8e8e8;
+      border-radius: 3px;
+      flex: 1;
+      margin: 0 12px;
+      overflow: hidden;
+    }
+    .type-stat-fill { height: 100%; background: #06c755; border-radius: 3px; }
+
+    .report-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .report-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      min-width: 500px;
+    }
+    .report-table th {
+      background: #06c755;
+      color: white;
+      padding: 10px 8px;
+      text-align: left;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .report-table td {
+      padding: 9px 8px;
+      border-bottom: 1px solid #f0f2f5;
+      vertical-align: top;
+    }
+    .report-table tr:nth-child(even) { background: #fafafa; }
+    .report-table .date-group {
+      background: #f0faf4;
+      font-weight: 600;
+      color: #06c755;
+    }
+    .report-table .date-group td { padding: 8px; }
+
+    /* 列印樣式 */
+    @media print {
+      body * { visibility: hidden; }
+      .print-area, .print-area * { visibility: visible; }
+      .print-area {
+        position: absolute;
+        left: 0; top: 0;
+        width: 100%;
+        padding: 20px;
+      }
+      .print-area .report-table { min-width: auto; font-size: 11px; }
+      .print-area .report-table th { background: #333 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .print-area .stat-box { border: 1px solid #ddd; }
+      .no-print { display: none !important; }
+    }
+
     /* ====== 編輯彈窗 ====== */
     .modal-overlay {
       display: none;
@@ -744,6 +871,43 @@
         <input type="date" id="filter-date" />
         <button class="filter-btn" onclick="loadMyRecords()">查詢</button>
         <button class="filter-btn-clear" onclick="clearFilter()">全部</button>
+      </div>
+
+      <!-- 日報表區塊 -->
+      <div class="report-section">
+        <h3>📊 產生日報表</h3>
+        <div class="report-range-bar">
+          <input type="date" id="report-start" />
+          <span>至</span>
+          <input type="date" id="report-end" />
+        </div>
+        <div class="report-action-bar no-print">
+          <button class="btn-preview" onclick="generateReport()">📊 預覽報表</button>
+          <button class="btn-excel" onclick="exportReportExcel()">📥 Excel</button>
+          <button class="btn-print" onclick="printReport()">🖨️ 列印</button>
+        </div>
+      </div>
+
+      <div class="report-preview" id="report-preview">
+        <div class="print-area" id="print-area">
+          <div id="report-header-info" style="text-align:center;margin-bottom:16px;display:none">
+            <h2 style="font-size:18px;color:#333" id="report-title"></h2>
+            <p style="font-size:13px;color:#888" id="report-subtitle"></p>
+          </div>
+          <div class="report-stats" id="report-stats"></div>
+          <div class="report-section" style="margin-bottom:0">
+            <h3>📋 各類型統計</h3>
+            <div class="type-stats" id="report-type-stats"></div>
+          </div>
+          <div style="margin-top:14px">
+            <div class="report-table-wrap">
+              <table class="report-table" id="report-table">
+                <thead id="report-thead"></thead>
+                <tbody id="report-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="records-summary" id="records-summary" style="display:none">
@@ -1234,6 +1398,7 @@
         showScreen('records-screen');
         document.getElementById('records-user-label').textContent = currentUser.displayName;
         document.getElementById('records-greeting').textContent = `${currentUser.displayName} 的紀錄`;
+        initReportDates();
         loadMyRecords();
       }
     }
@@ -1474,6 +1639,193 @@
         alert('網路錯誤，請重試');
       }
       btn.disabled = false;
+    }
+
+    // ====== 日報表功能 ======
+    let reportData = [];
+
+    // 預設日期：本月1日到今天
+    function initReportDates() {
+      const today = new Date();
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      document.getElementById('report-start').value = firstDay.toISOString().split('T')[0];
+      document.getElementById('report-end').value = today.toISOString().split('T')[0];
+    }
+
+    async function generateReport() {
+      const startDate = document.getElementById('report-start').value;
+      const endDate = document.getElementById('report-end').value;
+      if (!startDate || !endDate) { alert('請選擇起訖日期'); return; }
+      if (startDate > endDate) { alert('起始日期不能大於結束日期'); return; }
+
+      const previewEl = document.getElementById('report-preview');
+      previewEl.classList.add('show');
+      document.getElementById('report-stats').innerHTML = '<div style="text-align:center;padding:20px;color:#888">載入中...</div>';
+      document.getElementById('report-type-stats').innerHTML = '';
+      document.getElementById('report-thead').innerHTML = '';
+      document.getElementById('report-tbody').innerHTML = '';
+
+      try {
+        const res = await fetch(`/api/my-reports?startDate=${startDate}&endDate=${endDate}&limit=0`, {
+          headers: { 'Authorization': 'Bearer ' + authToken },
+        });
+        if (res.status === 401) { doLogout(); return; }
+        const result = await res.json();
+        reportData = result.data || [];
+
+        renderReport(startDate, endDate);
+      } catch (e) {
+        document.getElementById('report-stats').innerHTML = '<div style="text-align:center;padding:20px;color:#c62828">載入失敗，請重試</div>';
+      }
+    }
+
+    function renderReport(startDate, endDate) {
+      const data = reportData;
+      const totalCount = data.length;
+
+      // 計算天數
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const dayDiff = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+
+      // 有回報的天數
+      const reportedDays = new Set(data.map(r => r.report_date)).size;
+
+      // 各類型統計
+      const typeMap = {};
+      data.forEach(r => {
+        const t = r.task_type || '未分類';
+        typeMap[t] = (typeMap[t] || 0) + 1;
+      });
+      const typeSorted = Object.entries(typeMap).sort((a, b) => b[1] - a[1]);
+
+      // 報表標題（列印用）
+      const headerInfo = document.getElementById('report-header-info');
+      headerInfo.style.display = 'block';
+      document.getElementById('report-title').textContent = `${currentUser.displayName} 工作日報表`;
+      document.getElementById('report-subtitle').textContent = `期間：${startDate} ～ ${endDate}　產生時間：${new Date().toLocaleString('zh-TW')}`;
+
+      // 統計卡片
+      document.getElementById('report-stats').innerHTML = `
+        <div class="stat-box highlight"><div class="stat-num">${totalCount}</div><div class="stat-label">總回報筆數</div></div>
+        <div class="stat-box"><div class="stat-num">${reportedDays} / ${dayDiff}</div><div class="stat-label">回報天數 / 總天數</div></div>
+        <div class="stat-box"><div class="stat-num">${typeSorted.length}</div><div class="stat-label">事項類型數</div></div>
+        <div class="stat-box"><div class="stat-num">${totalCount > 0 ? (totalCount / reportedDays).toFixed(1) : 0}</div><div class="stat-label">平均每日筆數</div></div>
+      `;
+
+      // 類型統計長條
+      const maxCount = typeSorted.length > 0 ? typeSorted[0][1] : 1;
+      document.getElementById('report-type-stats').innerHTML = typeSorted.map(([type, count]) => `
+        <div class="type-stat-row">
+          <span style="white-space:nowrap">${escHtml(type)}</span>
+          <div class="type-stat-bar"><div class="type-stat-fill" style="width:${(count/maxCount*100).toFixed(0)}%"></div></div>
+          <span style="font-weight:600;color:#06c755;white-space:nowrap">${count} 筆</span>
+        </div>
+      `).join('');
+
+      // 明細表格
+      document.getElementById('report-thead').innerHTML = `
+        <tr><th>#</th><th>日期</th><th>時間</th><th>類型</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
+      `;
+
+      // 按日期分組
+      let lastDate = '';
+      let rowNum = 0;
+      let tbodyHtml = '';
+      data.forEach(r => {
+        if (r.report_date !== lastDate) {
+          lastDate = r.report_date;
+          const dayCount = data.filter(d => d.report_date === lastDate).length;
+          tbodyHtml += `<tr class="date-group"><td colspan="7">📅 ${escHtml(lastDate)}（${dayCount} 筆）</td></tr>`;
+        }
+        rowNum++;
+        const gps = r.gps_latitude ? `${Number(r.gps_latitude).toFixed(4)}, ${Number(r.gps_longitude).toFixed(4)}` : '-';
+        tbodyHtml += `<tr>
+          <td>${rowNum}</td>
+          <td>${escHtml(r.report_date)}</td>
+          <td>${escHtml(r.report_time || '')}</td>
+          <td>${escHtml(r.task_type || '')}</td>
+          <td>${escHtml(r.location || '')}</td>
+          <td>${escHtml(r.task_description || '')}</td>
+          <td style="font-size:11px">${gps}</td>
+        </tr>`;
+      });
+
+      if (totalCount === 0) {
+        tbodyHtml = '<tr><td colspan="7" style="text-align:center;padding:30px;color:#999">此期間無回報紀錄</td></tr>';
+      }
+
+      document.getElementById('report-tbody').innerHTML = tbodyHtml;
+    }
+
+    function printReport() {
+      if (reportData.length === 0 && !document.getElementById('report-preview').classList.contains('show')) {
+        alert('請先產生報表再列印');
+        return;
+      }
+      window.print();
+    }
+
+    function exportReportExcel() {
+      const startDate = document.getElementById('report-start').value;
+      const endDate = document.getElementById('report-end').value;
+      if (!startDate || !endDate) { alert('請先選擇日期區間'); return; }
+
+      if (reportData.length === 0) {
+        alert('請先產生報表，或此期間無資料');
+        return;
+      }
+
+      // 產生 CSV（相容 Excel 的 UTF-8 BOM）
+      const BOM = '﻿';
+      const headers = ['序號', '日期', '時間', '事項類型', '地點', '處理內容', 'GPS緯度', 'GPS經度'];
+      let csv = BOM + headers.join(',') + '\n';
+
+      reportData.forEach((r, i) => {
+        const row = [
+          i + 1,
+          r.report_date || '',
+          r.report_time || '',
+          csvEscape(r.task_type || ''),
+          csvEscape(r.location || ''),
+          csvEscape(r.task_description || ''),
+          r.gps_latitude || '',
+          r.gps_longitude || '',
+        ];
+        csv += row.join(',') + '\n';
+      });
+
+      // 加入統計摘要
+      csv += '\n';
+      csv += `報表期間,${startDate} ～ ${endDate}\n`;
+      csv += `人員,${csvEscape(currentUser.displayName)}\n`;
+      csv += `總筆數,${reportData.length}\n`;
+
+      const typeMap = {};
+      reportData.forEach(r => {
+        const t = r.task_type || '未分類';
+        typeMap[t] = (typeMap[t] || 0) + 1;
+      });
+      csv += '\n類型統計\n';
+      Object.entries(typeMap).sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
+        csv += `${csvEscape(type)},${count}\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `日報表_${currentUser.displayName}_${startDate}_${endDate}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+
+    function csvEscape(str) {
+      if (!str) return '';
+      str = String(str);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
     }
 
     // 啟動
