@@ -583,16 +583,13 @@ app.get('/api/reports', requireAuth, async (req, res) => {
   let countSql = 'SELECT COUNT(*) as total FROM reports WHERE 1=1';
   const params = [];
 
-  // 主管只能看到自己組內成員的回報（admin 可看全部）
+  // 主管和管理員可看全部回報，一般使用者只看自己
   const { role, userId } = req.session;
   if (role !== 'admin') {
-    const userInfo = await db.execute({ sql: 'SELECT group_id, is_supervisor FROM users WHERE user_id = ?', args: [userId] });
+    const userInfo = await db.execute({ sql: 'SELECT is_supervisor FROM users WHERE user_id = ?', args: [userId] });
     const u = userInfo.rows[0];
-    if (u && u.is_supervisor && u.group_id && u.group_id !== 'web') {
-      // 主管：只看同組成員
-      sql += ' AND user_id IN (SELECT user_id FROM users WHERE group_id = ?)';
-      countSql += ' AND user_id IN (SELECT user_id FROM users WHERE group_id = ?)';
-      params.push(u.group_id);
+    if (u && u.is_supervisor) {
+      // 主管：看全部（與管理員相同）
     } else {
       // 一般使用者：只看自己的
       sql += ' AND user_id = ?';
@@ -714,20 +711,19 @@ app.get('/api/summary', requireAuth, async (req, res) => {
   const today = tw.date;
   const { role, userId } = req.session;
 
-  // 主管用不同快取 key
-  let cacheKey = 'summary';
-  let groupFilter = null;
+  // 主管和管理員看全部統計，一般使用者看自己
+  let isSupervisor = false;
+  let cacheKey = `summary-user-${userId}`;
 
   if (role !== 'admin') {
-    const userInfo = await db.execute({ sql: 'SELECT group_id, is_supervisor FROM users WHERE user_id = ?', args: [userId] });
+    const userInfo = await db.execute({ sql: 'SELECT is_supervisor FROM users WHERE user_id = ?', args: [userId] });
     const u = userInfo.rows[0];
-    if (u && u.is_supervisor && u.group_id && u.group_id !== 'web') {
-      groupFilter = u.group_id;
-      cacheKey = `summary-group-${groupFilter}`;
-    } else {
-      // 一般使用者看自己的統計
-      cacheKey = `summary-user-${userId}`;
+    if (u && u.is_supervisor) {
+      isSupervisor = true;
+      cacheKey = 'summary';
     }
+  } else {
+    cacheKey = 'summary';
   }
 
   // 檢查快取
@@ -739,22 +735,12 @@ app.get('/api/summary', requireAuth, async (req, res) => {
 
   try {
     let data;
-    if (role === 'admin') {
+    if (role === 'admin' || isSupervisor) {
+      // 管理員和主管：看全部
       const results = await db.batch([
         { sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ?', args: [today] },
         { sql: 'SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ?', args: [today] },
         { sql: 'SELECT COUNT(*) as count FROM users', args: [] },
-      ]);
-      const totalReports = results[0].rows[0].count;
-      const totalUsers = results[1].rows[0].count;
-      const allUsers = results[2].rows[0].count;
-      data = { today, totalReports, totalUsers, allUsers, reportRate: allUsers > 0 ? Math.round((totalUsers / allUsers) * 100) : 0 };
-    } else if (groupFilter) {
-      // 主管：只統計組內
-      const results = await db.batch([
-        { sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ? AND user_id IN (SELECT user_id FROM users WHERE group_id = ?)', args: [today, groupFilter] },
-        { sql: 'SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ? AND user_id IN (SELECT user_id FROM users WHERE group_id = ?)', args: [today, groupFilter] },
-        { sql: 'SELECT COUNT(*) as count FROM users WHERE group_id = ?', args: [groupFilter] },
       ]);
       const totalReports = results[0].rows[0].count;
       const totalUsers = results[1].rows[0].count;
@@ -921,11 +907,10 @@ app.get('/api/status-board', requireAuth, async (req, res) => {
     const userParams = [];
 
     if (role !== 'admin') {
-      const userInfo = await db.execute({ sql: 'SELECT group_id, is_supervisor FROM users WHERE user_id = ?', args: [userId] });
+      const userInfo = await db.execute({ sql: 'SELECT is_supervisor FROM users WHERE user_id = ?', args: [userId] });
       const u = userInfo.rows[0];
-      if (u && u.is_supervisor && u.group_id && u.group_id !== 'web') {
-        userSql += ' AND group_id = ?';
-        userParams.push(u.group_id);
+      if (u && u.is_supervisor) {
+        // 主管：看全部人員（與管理員相同）
       } else {
         return res.status(403).json({ error: '需要主管或管理員權限' });
       }
