@@ -237,30 +237,77 @@
     .refresh-indicator { font-size: 12px; color: #aaa; text-align: center; margin-top: 16px; }
 
     /* 人員管理 */
-    .user-table {
-      width: 100%;
+    .user-cards { display: flex; flex-direction: column; gap: 10px; }
+    .user-card {
       background: white;
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
     }
-    .user-table table { width: 100%; border-collapse: collapse; }
-    .user-table th {
-      background: #f8f9fa;
-      padding: 14px 18px;
-      text-align: left;
-      font-size: 13px;
+    .user-card-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .user-avatar {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 16px; color: white;
+      flex-shrink: 0;
+    }
+    .user-avatar.admin-bg { background: #e65100; }
+    .user-avatar.supervisor-bg { background: #1565c0; }
+    .user-avatar.user-bg { background: #06c755; }
+    .user-card-info { flex: 1; min-width: 0; }
+    .user-card-name { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .user-card-id { font-size: 12px; color: #999; }
+    .user-card-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .user-card-controls label {
+      font-size: 12px;
       color: #888;
       font-weight: 600;
-      border-bottom: 2px solid #eee;
+      white-space: nowrap;
     }
-    .user-table td {
-      padding: 14px 18px;
-      font-size: 14px;
-      border-bottom: 1px solid #f0f0f0;
+    .user-card-controls select {
+      flex: 1;
+      min-width: 100px;
+      padding: 7px 10px;
+      border: 2px solid #e8e8e8;
+      border-radius: 8px;
+      font-size: 13px;
+      background: white;
+      -webkit-appearance: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 28px;
     }
-    .user-table tr:last-child td { border-bottom: none; }
-    .user-table tr:hover td { background: #fafafa; }
+    .user-card-controls select:focus { outline: none; border-color: #06c755; }
+    .user-card-actions {
+      display: flex;
+      gap: 6px;
+      padding-top: 10px;
+      border-top: 1px solid #f0f2f5;
+      flex-wrap: wrap;
+    }
+    .user-card-actions button {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-appearance: none;
+    }
     .role-badge {
       display: inline-block;
       padding: 3px 10px;
@@ -566,21 +613,7 @@
 
       <!-- 人員管理頁籤 -->
       <div class="tab-content" id="tab-users">
-        <div class="user-table" id="user-table">
-          <table>
-            <thead>
-              <tr>
-                <th>帳號</th>
-                <th>姓名</th>
-                <th>群組</th>
-                <th>角色</th>
-                <th>建立時間</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="user-tbody"></tbody>
-          </table>
-        </div>
+        <div class="user-cards" id="user-cards"></div>
       </div>
 
       <!-- 類型管理頁籤 -->
@@ -882,40 +915,114 @@
     }
 
     // ====== 人員管理 ======
+    let allGroups = [];
+
+    async function loadGroupOptions() {
+      try {
+        const res = await fetch('/api/groups', { headers: authHeaders() });
+        if (res.ok) allGroups = await res.json();
+      } catch (e) {}
+    }
+
     async function loadUsers() {
+      await loadGroupOptions();
       try {
         const res = await fetch('/api/users', { headers: authHeaders() });
         if (!res.ok) return;
         const users = await res.json();
-        const tbody = document.getElementById('user-tbody');
+        const container = document.getElementById('user-cards');
         const isAdmin = currentUser && currentUser.role === 'admin';
 
-        tbody.innerHTML = users.map(u => {
-          let roleBadge = '';
+        const groupOpts = allGroups.map(g => `<option value="${g.id}">${escHtml(g.name)}</option>`).join('');
+
+        container.innerHTML = users.map(u => {
+          let roleBadge = '', avatarClass = 'user-bg';
           if (u.role === 'admin') {
             roleBadge = '<span class="role-badge role-admin">管理員</span>';
+            avatarClass = 'admin-bg';
           } else if (u.is_supervisor) {
             roleBadge = '<span class="role-badge role-supervisor">主管</span>';
+            avatarClass = 'supervisor-bg';
           } else {
             roleBadge = '<span class="role-badge role-user">一般</span>';
           }
-          const groupName = u.group_name || (u.group_id && u.group_id !== 'web' ? u.group_id : '<span style="color:#ccc">未分組</span>');
-          const resetBtn = (isAdmin && u.user_id !== 'admin')
-            ? `<button class="btn" style="background:#fff3e0;color:#e65100;font-size:12px;padding:6px 10px" onclick="resetPassword('${escAttr(u.user_id)}', '${escAttr(u.display_name)}')">重設密碼</button>`
-            : '';
-          const deleteBtn = (isAdmin && u.user_id !== 'admin')
-            ? `<button class="btn btn-danger" onclick="deleteUser('${escAttr(u.user_id)}', '${escAttr(u.display_name)}')">刪除</button>`
-            : (u.user_id === 'admin' ? '-' : '<span style="color:#ccc;font-size:12px">需管理員權限</span>');
-          return `<tr>
-            <td>${escHtml(u.user_id)}</td>
-            <td><strong>${escHtml(u.display_name)}</strong></td>
-            <td>${groupName}</td>
-            <td>${roleBadge}</td>
-            <td style="font-size:13px;color:#888">${u.created_at || '-'}</td>
-            <td style="display:flex;gap:4px;flex-wrap:wrap">${resetBtn}${deleteBtn}</td>
-          </tr>`;
+
+          const isAdminUser = u.user_id === 'admin';
+          const canEdit = isAdmin && !isAdminUser;
+          const currentGroupId = u.group_id && u.group_id !== 'web' ? u.group_id : '';
+          const currentRole = u.role === 'admin' ? 'admin' : (u.is_supervisor ? 'supervisor' : 'user');
+
+          const controlsHtml = canEdit ? `
+            <div class="user-card-controls">
+              <label>分組</label>
+              <select onchange="updateUserGroup('${escAttr(u.user_id)}', this.value)" id="group-sel-${escAttr(u.user_id)}">
+                <option value="">未分組</option>
+                ${groupOpts}
+              </select>
+              <label>權限</label>
+              <select onchange="updateUserRole('${escAttr(u.user_id)}', this.value)">
+                <option value="user" ${currentRole === 'user' ? 'selected' : ''}>一般職員</option>
+                <option value="supervisor" ${currentRole === 'supervisor' ? 'selected' : ''}>主管</option>
+              </select>
+            </div>` : '';
+
+          const actionsHtml = canEdit ? `
+            <div class="user-card-actions">
+              <button style="background:#fff3e0;color:#e65100" onclick="resetPassword('${escAttr(u.user_id)}', '${escAttr(u.display_name)}')">🔑 重設密碼</button>
+              <button style="background:#fce4ec;color:#c62828" onclick="deleteUser('${escAttr(u.user_id)}', '${escAttr(u.display_name)}')">🗑️ 刪除</button>
+            </div>` : '';
+
+          return `
+            <div class="user-card" id="ucard-${escAttr(u.user_id)}">
+              <div class="user-card-top">
+                <div class="user-avatar ${avatarClass}">${(u.display_name || '?')[0]}</div>
+                <div class="user-card-info">
+                  <div class="user-card-name">${escHtml(u.display_name)} ${roleBadge}</div>
+                  <div class="user-card-id">${escHtml(u.user_id)}${u.group_name ? '　📁 ' + escHtml(u.group_name) : ''}</div>
+                </div>
+              </div>
+              ${controlsHtml}
+              ${actionsHtml}
+            </div>`;
         }).join('');
+
+        // 設定分組下拉選單的值
+        users.forEach(u => {
+          const sel = document.getElementById('group-sel-' + u.user_id);
+          if (sel) {
+            const gid = u.group_id && u.group_id !== 'web' ? u.group_id : '';
+            sel.value = gid;
+          }
+        });
       } catch (e) {}
+    }
+
+    async function updateUserGroup(userId, groupId) {
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
+          method: 'PUT', headers: jsonHeaders(),
+          body: JSON.stringify({ groupId: groupId || null, isSupervisor: null }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.error || '設定失敗'); }
+        // 保留 is_supervisor 不變，只更新 group
+        // 需要重新取得使用者的 supervisor 狀態
+        loadUsers();
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    async function updateUserRole(userId, role) {
+      const isSupervisor = role === 'supervisor' ? 1 : 0;
+      try {
+        // 先取得使用者目前的 group_id
+        const userCard = document.getElementById('group-sel-' + userId);
+        const groupId = userCard ? userCard.value : null;
+        const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
+          method: 'PUT', headers: jsonHeaders(),
+          body: JSON.stringify({ groupId: groupId || null, isSupervisor }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.error || '設定失敗'); }
+        loadUsers();
+      } catch (e) { alert('網路錯誤'); }
     }
 
     async function deleteUser(userId, displayName) {

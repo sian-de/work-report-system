@@ -489,7 +489,7 @@ app.delete('/api/groups/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// 指派使用者到群組（或移除）
+// 指派使用者到群組（或移除）+ 設定權限
 app.put('/api/users/:userId/group', requireAdmin, async (req, res) => {
   const { userId } = req.params;
   const { groupId, isSupervisor } = req.body;
@@ -498,9 +498,11 @@ app.put('/api/users/:userId/group', requireAdmin, async (req, res) => {
     const user = await db.execute({ sql: 'SELECT * FROM users WHERE user_id = ?', args: [userId] });
     if (user.rows.length === 0) return res.status(404).json({ error: '找不到此使用者' });
 
+    const currentUser = user.rows[0];
     // groupId 為 null 或空字串表示移除群組
-    const newGroupId = groupId ? String(groupId) : null;
-    const newSupervisor = isSupervisor ? 1 : 0;
+    const newGroupId = groupId !== undefined ? (groupId ? String(groupId) : null) : currentUser.group_id;
+    // isSupervisor 為 null 表示不變更
+    const newSupervisor = isSupervisor !== null && isSupervisor !== undefined ? (isSupervisor ? 1 : 0) : currentUser.is_supervisor;
 
     await db.execute({
       sql: 'UPDATE users SET group_id = ?, is_supervisor = ? WHERE user_id = ?',
