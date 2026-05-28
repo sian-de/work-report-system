@@ -1,0 +1,16 @@
+node_modules
+.env
+.git
+.gitignore
+*.md
+reports.db
+reports.db-shm
+reports.db-wal
+ngrok.exe
+cloudflared.exe
+cf2.exe
+bot.js
+Dockerfile
+docker-compose.yml
+.dockerignore
+docs/

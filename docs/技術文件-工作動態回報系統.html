@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>工作動態回報系統 — 技術文件</title>
+<style>
+  body { font-family: '微軟正黑體', 'Microsoft JhengHei', sans-serif; margin: 40px 60px; color: #333; line-height: 1.8; }
+  h1 { text-align: center; color: #06c755; border-bottom: 3px solid #06c755; padding-bottom: 15px; font-size: 28px; }
+  h2 { color: #06c755; border-left: 5px solid #06c755; padding-left: 12px; margin-top: 40px; font-size: 20px; }
+  h3 { color: #444; margin-top: 25px; font-size: 16px; }
+  table { border-collapse: collapse; width: 100%; margin: 15px 0; font-size: 14px; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+  th { background-color: #06c755; color: white; }
+  tr:nth-child(even) { background-color: #f9f9f9; }
+  code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: Consolas, monospace; font-size: 13px; }
+  pre { background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; font-family: Consolas, monospace; font-size: 13px; line-height: 1.5; }
+  .info-box { background: #e8f5e9; border-left: 4px solid #06c755; padding: 12px 16px; margin: 15px 0; border-radius: 0 4px 4px 0; }
+  .warn-box { background: #fff3e0; border-left: 4px solid #ff9800; padding: 12px 16px; margin: 15px 0; border-radius: 0 4px 4px 0; }
+  .page-break { page-break-before: always; }
+  .header-info { text-align: center; color: #888; margin-bottom: 30px; font-size: 14px; }
+  .toc { background: #fafafa; padding: 20px 30px; border: 1px solid #ddd; border-radius: 5px; margin: 20px 0; }
+  .toc a { text-decoration: none; color: #06c755; }
+  .toc li { margin: 6px 0; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; color: white; }
+  .badge-green { background: #06c755; }
+  .badge-blue { background: #2196f3; }
+  .badge-orange { background: #ff9800; }
+</style>
+</head>
+<body>
+
+<h1>工作動態回報系統<br>技術文件</h1>
+<div class="header-info">
+  版本：1.0.0 ｜ 文件日期：2026-05-28<br>
+  機密等級：內部使用
+</div>
+
+<div class="toc">
+  <strong>目錄</strong>
+  <ol>
+    <li><a href="#overview">系統概述</a></li>
+    <li><a href="#arch">技術架構</a></li>
+    <li><a href="#structure">專案結構</a></li>
+    <li><a href="#database">資料庫設計</a></li>
+    <li><a href="#api">API 介面清單</a></li>
+    <li><a href="#auth">認證與安全</a></li>
+    <li><a href="#deploy">部署指南</a></li>
+    <li><a href="#env">環境變數</a></li>
+    <li><a href="#ops">維運注意事項</a></li>
+    <li><a href="#troubleshoot">故障排除</a></li>
+  </ol>
+</div>
+
+<!-- ============================================ -->
+<h2 id="overview">一、系統概述</h2>
+
+<p>工作動態回報系統是一套為稽查/調查人員設計的外勤工作回報平台。人員透過手機瀏覽器即時回報工作動態（含 GPS 定位），主管與管理員可在後台即時監控人員位置、查看統計報表。</p>
+
+<h3>核心功能</h3>
+<table>
+  <tr><th>功能</th><th>說明</th></tr>
+  <tr><td>即時回報</td><td>職員透過手機填寫工作事項，自動記錄 GPS 座標</td></tr>
+  <tr><td>同事位置</td><td>地圖即時顯示全組同事最新位置與停留時間</td></tr>
+  <tr><td>日報表</td><td>職員可自選日期區間，產生統計報表並列印/匯出 Excel</td></tr>
+  <tr><td>後台管理</td><td>管理員/主管可查看所有回報、篩選匯出、管理人員分組</td></tr>
+  <tr><td>即時狀態板</td><td>儀表板顯示今日回報狀態，區分已回報/未回報人員</td></tr>
+  <tr><td>PWA 支援</td><td>手機可「加到主畫面」，像 App 一樣使用</td></tr>
+</table>
+
+<h3>角色權限模型</h3>
+<table>
+  <tr><th>角色</th><th>前台（回報頁）</th><th>後台（管理頁）</th><th>資料範圍</th></tr>
+  <tr><td><span class="badge badge-green">管理員</span></td><td>可使用</td><td>可使用</td><td>所有人</td></tr>
+  <tr><td><span class="badge badge-blue">主管</span></td><td>可使用</td><td>可使用</td><td>所有人</td></tr>
+  <tr><td><span class="badge badge-orange">一般職員</span></td><td>可使用</td><td>自動導向前台</td><td>僅自己</td></tr>
+</table>
+
+<!-- ============================================ -->
+<div class="page-break"></div>
+<h2 id="arch">二、技術架構</h2>
+
+<h3>架構圖</h3>
+<pre>
+┌─────────────────────────────────────────────┐
+│                使用者裝置                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │ 手機瀏覽器 │  │ 桌機瀏覽器 │  │  PWA App  │   │
+│  └─────┬────┘  └─────┬────┘  └─────┬────┘   │
+└────────┼─────────────┼─────────────┼────────┘
+         │             │             │
+         ▼             ▼             ▼
+┌─────────────────────────────────────────────┐
+│            Express.js 伺服器 (Node.js)        │
+│  ┌────────┐ ┌───────┐ ┌──────────────────┐  │
+│  │ helmet  │ │ gzip  │ │ rate-limiter     │  │
+│  │ (安全)  │ │(壓縮) │ │ (防暴力破解)      │  │
+│  └────────┘ └───────┘ └──────────────────┘  │
+│  ┌─────────────────────────────────────┐    │
+│  │         REST API 層                  │    │
+│  │  認證 / 回報 / 查詢 / 管理 / 匯出    │    │
+│  └──────────────┬──────────────────────┘    │
+│                 ▼                            │
+│  ┌─────────────────────────────────────┐    │
+│  │     @libsql/client 資料庫驅動        │    │
+│  └──────────────┬──────────────────────┘    │
+└─────────────────┼───────────────────────────┘
+                  │
+         ┌────────┴────────┐
+         ▼                 ▼
+┌────────────────┐ ┌────────────────┐
+│  Turso 雲端 DB  │ │  本地 SQLite   │
+│  (推薦/生產)    │ │  (開發/備用)    │
+└────────────────┘ └────────────────┘
+</pre>
+
+<h3>技術堆疊</h3>
+<table>
+  <tr><th>元件</th><th>技術</th><th>說明</th></tr>
+  <tr><td>後端框架</td><td>Express.js 4.x</td><td>Node.js HTTP 伺服器</td></tr>
+  <tr><td>執行環境</td><td>Node.js &ge; 18</td><td>JavaScript 執行環境</td></tr>
+  <tr><td>資料庫</td><td>Turso (libSQL)</td><td>相容 SQLite 的雲端資料庫</td></tr>
+  <tr><td>密碼加密</td><td>bcryptjs</td><td>自帶鹽值，cost factor 12</td></tr>
+  <tr><td>安全標頭</td><td>helmet</td><td>CSP、X-Frame-Options 等 15+ 安全標頭</td></tr>
+  <tr><td>速率限制</td><td>express-rate-limit</td><td>防暴力登入，每 IP 每 15 分鐘 10 次</td></tr>
+  <tr><td>壓縮</td><td>compression</td><td>gzip 壓縮，減少 60-70% 傳輸量</td></tr>
+  <tr><td>地圖</td><td>Leaflet.js (CDN)</td><td>前端 GPS 定位視覺化</td></tr>
+  <tr><td>PWA</td><td>Service Worker</td><td>網路優先策略，支援離線快取</td></tr>
+</table>
+
+<h3>NPM 套件一覽</h3>
+<table>
+  <tr><th>套件名稱</th><th>版本</th><th>用途</th></tr>
+  <tr><td>express</td><td>^4.18.2</td><td>Web 框架</td></tr>
+  <tr><td>@libsql/client</td><td>^0.14.0</td><td>Turso/SQLite 資料庫驅動</td></tr>
+  <tr><td>bcryptjs</td><td>^3.0.3</td><td>密碼雜湊加密</td></tr>
+  <tr><td>helmet</td><td>^8.2.0</td><td>HTTP 安全標頭</td></tr>
+  <tr><td>express-rate-limit</td><td>^8.5.2</td><td>API 速率限制</td></tr>
+  <tr><td>compression</td><td>^1.8.1</td><td>回應壓縮</td></tr>
+  <tr><td>dotenv</td><td>^16.3.1</td><td>環境變數載入</td></tr>
+</table>
+
+<!-- ============================================ -->
+<div class="page-break"></div>
+<h2 id="structure">三、專案結構</h2>
+
+<pre>
+work-report-system/
+├── server.js            # 主伺服器程式（所有 API 端點）
+├── database.js          # 資料庫連線初始化與資料表建立
+├── package.json         # Node.js 專案設定與依賴
+├── .env                 # 環境變數設定（勿加入版本控制）
+├── .env.example         # 環境變數範本
+├── .gitignore           # Git 忽略規則
+├── Dockerfile           # Docker 映像構建檔
+├── docker-compose.yml   # Docker Compose 部署設定
+├── .dockerignore        # Docker 構建忽略規則
+├── public/
+│   ├── report.html      # 職員前台頁面
+│   ├── index.html       # 管理後台頁面
+│   ├── track.html       # GPS 追蹤頁面
+│   ├── manifest.json    # PWA 安裝設定
+│   └── sw.js            # Service Worker
+└── docs/
+    ├── technical-guide.md         # Markdown 技術文件
+    └── 技術文件-工作動態回報系統.html  # Word 版技術文件
+</pre>
+
+<!-- ============================================ -->
+<h2 id="database">四、資料庫設計</h2>
+
+<h3>4.1 users 表（使用者）</h3>
+<table>
+  <tr><th>欄位</th><th>型別</th><th>限制</th><th>說明</th></tr>
+  <tr><td>user_id</td><td>TEXT</td><td>PRIMARY KEY</td><td>帳號（唯一識別碼）</td></tr>
+  <tr><td>display_name</td><td>TEXT</td><td></td><td>顯示名稱</td></tr>
+  <tr><td>group_id</td><td>TEXT</td><td></td><td>所屬分組名稱</td></tr>
+  <tr><td>is_supervisor</td><td>INTEGER</td><td>DEFAULT 0</td><td>是否為主管（0=否，1=是）</td></tr>
+  <tr><td>password_hash</td><td>TEXT</td><td></td><td>bcrypt 密碼雜湊值</td></tr>
+  <tr><td>role</td><td>TEXT</td><td>DEFAULT 'user'</td><td>角色（admin / user）</td></tr>
+  <tr><td>created_at</td><td>DATETIME</td><td>DEFAULT CURRENT_TIMESTAMP</td><td>建立時間</td></tr>
+</table>
+
+<h3>4.2 reports 表（工作回報）</h3>
+<table>
+  <tr><th>欄位</th><th>型別</th><th>限制</th><th>說明</th></tr>
+  <tr><td>id</td><td>INTEGER</td><td>PRIMARY KEY AUTOINCREMENT</td><td>自動編號</td></tr>
+  <tr><td>user_id</td><td>TEXT</td><td>NOT NULL, FK → users</td><td>回報人帳號</td></tr>
+  <tr><td>display_name</td><td>TEXT</td><td></td><td>回報人姓名</td></tr>
+  <tr><td>group_id</td><td>TEXT</td><td></td><td>回報人所屬分組</td></tr>
+  <tr><td>report_date</td><td>TEXT</td><td></td><td>回報日期（YYYY-MM-DD）</td></tr>
+  <tr><td>report_time</td><td>TEXT</td><td></td><td>回報時間（HH:MM）</td></tr>
+  <tr><td>task_type</td><td>TEXT</td><td></td><td>事項類型名稱</td></tr>
+  <tr><td>location</td><td>TEXT</td><td></td><td>工作地點</td></tr>
+  <tr><td>task_description</td><td>TEXT</td><td></td><td>工作內容描述</td></tr>
+  <tr><td>gps_latitude</td><td>REAL</td><td></td><td>GPS 緯度</td></tr>
+  <tr><td>gps_longitude</td><td>REAL</td><td></td><td>GPS 經度</td></tr>
+  <tr><td>created_at</td><td>DATETIME</td><td>DEFAULT CURRENT_TIMESTAMP</td><td>建立時間</td></tr>
+</table>
+
+<h3>4.3 task_types 表（事項類型）</h3>
+<table>
+  <tr><th>欄位</th><th>型別</th><th>限制</th><th>說明</th></tr>
+  <tr><td>id</td><td>INTEGER</td><td>PRIMARY KEY AUTOINCREMENT</td><td>自動編號</td></tr>
+  <tr><td>name</td><td>TEXT</td><td>NOT NULL UNIQUE</td><td>類型名稱</td></tr>
+  <tr><td>emoji</td><td>TEXT</td><td>DEFAULT '📌'</td><td>前端顯示圖示</td></tr>
+  <tr><td>sort_order</td><td>INTEGER</td><td>DEFAULT 0</td><td>排序順序</td></tr>
+  <tr><td>is_active</td><td>INTEGER</td><td>DEFAULT 1</td><td>是否啟用</td></tr>
+</table>
+
+<h3>4.4 groups 表（分組）</h3>
+<table>
+  <tr><th>欄位</th><th>型別</th><th>限制</th><th>說明</th></tr>
+  <tr><td>id</td><td>INTEGER</td><td>PRIMARY KEY AUTOINCREMENT</td><td>自動編號</td></tr>
+  <tr><td>name</td><td>TEXT</td><td>NOT NULL UNIQUE</td><td>分組名稱</td></tr>
+  <tr><td>created_at</td><td>DATETIME</td><td>DEFAULT CURRENT_TIMESTAMP</td><td>建立時間</td></tr>
+</table>
+
+<h3>4.5 索引</h3>
+<table>
+  <tr><th>索引名稱</th><th>資料表</th><th>欄位</th></tr>
+  <tr><td>idx_reports_date</td><td>reports</td><td>created_at</td></tr>
+  <tr><td>idx_reports_user</td><td>reports</td><td>user_id</td></tr>
+  <tr><td>idx_reports_report_date</td><td>reports</td><td>report_date</td></tr>
+</table>
+
+<!-- ============================================ -->
+<div class="page-break"></div>
+<h2 id="api">五、API 介面清單</h2>
+
+<h3>5.1 認證相關</h3>
+<table>
+  <tr><th>方法</th><th>路徑</th><th>權限</th><th>說明</th></tr>
+  <tr><td>POST</td><td>/api/register</td><td>公開（限速）</td><td>註冊新帳號</td></tr>
+  <tr><td>POST</td><td>/api/login</td><td>公開（限速）</td><td>登入取得 Token</td></tr>
+  <tr><td>POST</td><td>/api/logout</td><td>需登入</td><td>登出（清除 Token）</td></tr>
+  <tr><td>GET</td><td>/api/me</td><td>需登入</td><td>取得目前使用者資訊</td></tr>
+  <tr><td>POST</td><td>/api/forgot-password</td><td>公開（限速）</td><td>忘記密碼（帳號+姓名驗證）</td></tr>
+  <tr><td>POST</td><td>/api/change-password</td><td>需登入</td><td>修改密碼（需舊密碼）</td></tr>
+</table>
+
+<h3>5.2 工作回報</h3>
+<table>
+  <tr><th>方法</th><th>路徑</th><th>權限</th><th>說明</th></tr>
+  <tr><td>POST</td><td>/api/submit-report</td><td>需登入</td><td>提交工作回報</td></tr>
+  <tr><td>GET</td><td>/api/reports</td><td>需登入</td><td>查詢回報列表（支援篩選、關鍵字）</td></tr>
+  <tr><td>GET</td><td>/api/my-reports</td><td>需登入</td><td>查詢自己的回報（支援日期區間）</td></tr>
+  <tr><td>PUT</td><td>/api/reports/:id</td><td>需登入</td><td>修改回報內容</td></tr>
+  <tr><td>DELETE</td><td>/api/reports/:id</td><td>需登入</td><td>刪除回報</td></tr>
+  <tr><td>GET</td><td>/api/user-today</td><td>需登入</td><td>今日回報筆數</td></tr>
+  <tr><td>GET</td><td>/api/summary</td><td>需登入</td><td>統計摘要</td></tr>
+  <tr><td>GET</td><td>/api/export</td><td>管理員</td><td>CSV 匯出全部回報</td></tr>
+</table>
+
+<h3>5.3 GPS 相關</h3>
+<table>
+  <tr><th>方法</th><th>路徑</th><th>權限</th><th>說明</th></tr>
+  <tr><td>GET</td><td>/api/trajectory</td><td>需登入</td><td>查詢使用者軌跡</td></tr>
+  <tr><td>GET</td><td>/api/gps-users</td><td>需登入</td><td>有 GPS 資料的使用者列表</td></tr>
+  <tr><td>GET</td><td>/api/last-locations</td><td>需登入</td><td>所有同事最新位置</td></tr>
+</table>
+
+<h3>5.4 管理功能</h3>
+<table>
+  <tr><th>方法</th><th>路徑</th><th>權限</th><th>說明</th></tr>
+  <tr><td>GET</td><td>/api/users</td><td>需登入</td><td>使用者列表</td></tr>
+  <tr><td>DELETE</td><td>/api/users/:userId</td><td>管理員</td><td>刪除使用者</td></tr>
+  <tr><td>PUT</td><td>/api/users/:userId/group</td><td>管理員</td><td>設定分組與角色</td></tr>
+  <tr><td>POST</td><td>/api/users/:userId/reset-password</td><td>管理員</td><td>重設使用者密碼</td></tr>
+  <tr><td>GET</td><td>/api/users/unassigned</td><td>需登入</td><td>未分組使用者列表</td></tr>
+  <tr><td>GET</td><td>/api/status-board</td><td>需登入</td><td>今日回報狀態板</td></tr>
+</table>
+
+<h3>5.5 事項類型 / 分組管理</h3>
+<table>
+  <tr><th>方法</th><th>路徑</th><th>權限</th><th>說明</th></tr>
+  <tr><td>GET</td><td>/api/task-types</td><td>需登入</td><td>啟用中的事項類型</td></tr>
+  <tr><td>GET</td><td>/api/task-types/all</td><td>管理員</td><td>所有事項類型</td></tr>
+  <tr><td>POST</td><td>/api/task-types</td><td>管理員</td><td>新增事項類型</td></tr>
+  <tr><td>PUT</td><td>/api/task-types/:id</td><td>管理員</td><td>修改事項類型</td></tr>
+  <tr><td>DELETE</td><td>/api/task-types/:id</td><td>管理員</td><td>刪除事項類型</td></tr>
+  <tr><td>GET</td><td>/api/groups</td><td>需登入</td><td>分組列表</td></tr>
+  <tr><td>POST</td><td>/api/groups</td><td>管理員</td><td>新增分組</td></tr>
+  <tr><td>PUT</td><td>/api/groups/:id</td><td>管理員</td><td>修改分組名稱</td></tr>
+  <tr><td>DELETE</td><td>/api/groups/:id</td><td>管理員</td><td>刪除分組</td></tr>
+</table>
+
+<!-- ============================================ -->
+<div class="page-break"></div>
+<h2 id="auth">六、認證與安全機制</h2>
+
+<h3>6.1 認證流程</h3>
+<p>系統使用 <strong>Token-based Session</strong> 認證機制：</p>
+<ol>
+  <li>使用者以帳號密碼登入 <code>POST /api/login</code></li>
+  <li>伺服器驗證密碼（bcrypt 比對）</li>
+  <li>產生隨機 Token，存入伺服器記憶體 Map</li>
+  <li>前端將 Token 存入 localStorage</li>
+  <li>後續 API 請求帶 <code>Authorization: Bearer &lt;token&gt;</code> 標頭</li>
+  <li>Token 有效期 24 小時，逾期自動清除</li>
+</ol>
+
+<h3>6.2 安全防護</h3>
+<table>
+  <tr><th>防護項目</th><th>實作方式</th><th>說明</th></tr>
+  <tr><td>安全標頭</td><td>helmet.js</td><td>CSP、X-Frame-Options、HSTS 等 15+ 安全標頭</td></tr>
+  <tr><td>密碼儲存</td><td>bcryptjs (cost 12)</td><td>自帶隨機鹽值，每次雜湊約 250ms</td></tr>
+  <tr><td>暴力破解防護</td><td>express-rate-limit</td><td>登入/註冊/忘記密碼：每 IP 每 15 分鐘最多 10 次</td></tr>
+  <tr><td>CSV 匯出保護</td><td>requireAdmin 中間件</td><td>僅管理員可匯出資料</td></tr>
+  <tr><td>SQL 注入防護</td><td>參數化查詢</td><td>所有 SQL 使用 args 參數綁定</td></tr>
+  <tr><td>HTTPS</td><td>部署平台處理</td><td>Render 自動提供 SSL 憑證</td></tr>
+  <tr><td>傳輸壓縮</td><td>compression</td><td>gzip 壓縮減少 60-70% 傳輸量</td></tr>
+</table>
+
+<div class="info-box">
+  <strong>密碼自動遷移：</strong>若資料庫中存在舊版 SHA-256 密碼，使用者下次成功登入時系統會自動將密碼升級為 bcrypt 格式，無需人工介入。
+</div>
+
+<!-- ============================================ -->
+<div class="page-break"></div>
+<h2 id="deploy">七、部署指南</h2>
+
+<h3>方式一：Docker Compose 部署（推薦自建）</h3>
+
+<div class="info-box">
+  <strong>前置需求：</strong>Docker Engine 20+ 及 Docker Compose v2
+</div>
+
+<pre>
+# 1. 取得程式碼
+git clone https://github.com/your-org/work-report-system.git
+cd work-report-system
+
+# 2. 設定環境變數
+cp .env.example .env
+# 使用文字編輯器填入 Turso 連線資訊
+
+# 3. 啟動服務
+docker compose up -d
+
+# 4. 確認狀態
+docker compose ps
+docker compose logs -f app
+
+# 5. 訪問系統
+# http://伺服器IP:3000
+</pre>
+
+<h4>常用維運指令</h4>
+<table>
+  <tr><th>操作</th><th>指令</th></tr>
+  <tr><td>停止服務</td><td><code>docker compose down</code></td></tr>
+  <tr><td>更新版本</td><td><code>git pull && docker compose up -d --build</code></td></tr>
+  <tr><td>查看日誌</td><td><code>docker compose logs -f app</code></td></tr>
+  <tr><td>重啟服務</td><td><code>docker compose restart</code></td></tr>
+  <tr><td>進入容器</td><td><code>docker exec -it work-report-system sh</code></td></tr>
+</table>
+
+<h3>方式二：直接執行 Node.js</h3>
+
+<pre>
+# 前置需求：Node.js >= 18
+
+# 安裝依賴
+npm ci --omit=dev
+
+# 設定環境變數
+cp .env.example .env
+
+# 直接執行
+node server.js
+
+# 或使用 PM2 管理程序（推薦）
+npm install -g pm2
+pm2 start server.js --name work-report
+pm2 save
+pm2 startup    # 設定開機自動啟動
+</pre>
+
+<h3>方式三：Render 雲端平台（目前使用）</h3>
+<ol>
+  <li>將 GitHub repo 連結至 <strong>Render</strong> (https://render.com)</li>
+  <li>建立 Web Service → 選擇 repo</li>
+  <li>Build Command：<code>npm install</code></li>
+  <li>Start Command：<code>node server.js</code></li>
+  <li>在 Environment 頁面設定環境變數</li>
+  <li>每次 push 到 main 分支即自動部署</li>
+</ol>
+
+<div class="warn-box">
+  <strong>注意：</strong>Render 免費方案閒置 15 分鐘後會休眠，首次訪問需 30-60 秒喚醒。若需穩定服務，建議升級付費方案或使用 Docker 自建。
+</div>
+
+<!-- ============================================ -->
+<h2 id="env">八、環境變數說明</h2>
+
+<table>
+  <tr><th>變數名稱</th><th>必要</th><th>預設值</th><th>說明</th></tr>
+  <tr><td><code>PORT</code></td><td>否</td><td>3000</td><td>伺服器監聽埠號</td></tr>
+  <tr><td><code>TURSO_DATABASE_URL</code></td><td>建議</td><td>file:reports.db</td><td>Turso 資料庫 URL</td></tr>
+  <tr><td><code>TURSO_AUTH_TOKEN</code></td><td>建議</td><td>—</td><td>Turso 認證 Token</td></tr>
+</table>
+
+<div class="info-box">
+  若不設定 <code>TURSO_DATABASE_URL</code> 和 <code>TURSO_AUTH_TOKEN</code>，系統會自動使用本地 SQLite 檔案 <code>reports.db</code>。適合開發測試使用。
+</div>
+
+<!-- ============================================ -->
+<h2 id="ops">九、維運注意事項</h2>
+
+<table>
+  <tr><th>項目</th><th>說明</th></tr>
+  <tr><td>Session 儲存</td><td>Token 存於伺服器記憶體，重啟後所有使用者需重新登入</td></tr>
+  <tr><td>Turso 免費額度</td><td>每月 9GB 儲存、500M 讀取列數，一般使用足夠</td></tr>
+  <tr><td>Render 免費額度</td><td>閒置 15 分鐘後休眠，首次訪問需等待喚醒</td></tr>
+  <tr><td>資料備份</td><td>Turso 雲端自動備份；本地 SQLite 需定期手動備份 reports.db</td></tr>
+  <tr><td>健康檢查</td><td><code>GET /api/health</code> 回傳 <code>{ status: 'ok' }</code>，可接入監控系統</td></tr>
+  <tr><td>日誌</td><td>使用 console.log/error 輸出至 stdout/stderr，Docker 可用 <code>docker logs</code> 查看</td></tr>
+</table>
+
+<h3>建立管理員帳號</h3>
+<ol>
+  <li>第一位使用者透過網頁註冊，預設為一般職員</li>
+  <li>使用 Turso CLI 手動升級為管理員：
+    <pre>turso db shell your-database
+UPDATE users SET role = 'admin' WHERE user_id = 'your_account';</pre>
+  </li>
+  <li>之後由管理員在後台管理其他使用者的角色與分組</li>
+</ol>
+
+<!-- ============================================ -->
+<h2 id="troubleshoot">十、故障排除</h2>
+
+<table>
+  <tr><th>問題</th><th>可能原因</th><th>解決方式</th></tr>
+  <tr><td>無法登入</td><td>密碼錯誤或帳號不存在</td><td>管理員在後台重設密碼</td></tr>
+  <tr><td>GPS 無法定位</td><td>瀏覽器未授權位置權限</td><td>手機設定 → 允許位置存取；需使用 HTTPS</td></tr>
+  <tr><td>頁面空白</td><td>CSP 阻擋外部資源</td><td>檢查 helmet 的 CSP 設定</td></tr>
+  <tr><td>API 回傳 429</td><td>觸發速率限制</td><td>同一 IP 短時間登入過多，等 15 分鐘後重試</td></tr>
+  <tr><td>Docker 啟動失敗</td><td>.env 未設定或設定錯誤</td><td>確認 .env 檔案存在且連線資訊正確</td></tr>
+  <tr><td>重啟後需重新登入</td><td>Session 存於記憶體</td><td>正常行為，非錯誤</td></tr>
+  <tr><td>地圖不顯示</td><td>CDN 被防火牆阻擋</td><td>確保可存取 unpkg.com 及 tile.openstreetmap.org</td></tr>
+</table>
+
+<hr>
+<p style="text-align:center; color:#999; font-size:12px;">
+  工作動態回報系統 v1.0.0 — 技術文件<br>
+  文件產生日期：2026-05-28
+</p>
+
+</body>
+</html>

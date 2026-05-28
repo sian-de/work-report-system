@@ -1,0 +1,42 @@
+# =============================================
+# 工作動態回報系統 — Docker Compose 部署設定
+# =============================================
+# 使用方式：
+#   1. 複製 .env.example 為 .env 並填入實際設定值
+#   2. docker compose up -d
+#   3. 開啟 http://localhost:3000
+# =============================================
+
+services:
+  app:
+    build: .
+    container_name: work-report-system
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    volumes:
+      # 本地 SQLite 資料持久化（僅在不使用 Turso 雲端時需要）
+      - app-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # 資源限制（依實際需求調整）
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.25"
+
+volumes:
+  app-data:
+    driver: local
