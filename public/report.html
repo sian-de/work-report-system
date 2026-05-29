@@ -149,31 +149,39 @@
     }
     .input-label .required { color: #e53935; font-size: 12px; }
 
-    .type-grid {
+    /* 到達/離開切換按鈕 */
+    .arrive-leave-bar {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
     }
-    .type-btn {
-      padding: 10px 6px;
-      border: 2px solid #e8e8e8;
-      border-radius: 10px;
+    .al-btn {
+      padding: 16px 10px;
+      border: 3px solid #e8e8e8;
+      border-radius: 14px;
       background: white;
-      font-size: 13px;
-      font-weight: 500;
+      font-size: 16px;
+      font-weight: 600;
       cursor: pointer;
       text-align: center;
-      transition: all 0.15s;
+      transition: all 0.2s;
       -webkit-appearance: none;
+      color: #666;
     }
-    .type-btn:hover { border-color: #06c755; }
-    .type-btn.active {
+    .al-btn:active { transform: scale(0.97); }
+    .al-btn .al-icon { font-size: 28px; display: block; margin-bottom: 6px; }
+    .al-btn.active-arrive {
       border-color: #06c755;
       background: #f0faf4;
       color: #06c755;
-      font-weight: 700;
+      box-shadow: 0 2px 12px rgba(6,199,85,0.2);
     }
-    .type-btn .type-icon { font-size: 18px; display: block; margin-bottom: 3px; }
+    .al-btn.active-leave {
+      border-color: #ff9800;
+      background: #fff8e1;
+      color: #e65100;
+      box-shadow: 0 2px 12px rgba(255,152,0,0.2);
+    }
 
     input[type="text"], textarea {
       width: 100%;
@@ -652,9 +660,8 @@
 
       .form-container { padding: 12px; }
 
-      .type-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
-      .type-btn { padding: 10px 4px; font-size: 12px; }
-      .type-btn .type-icon { font-size: 16px; }
+      .al-btn { padding: 14px 8px; font-size: 15px; }
+      .al-btn .al-icon { font-size: 24px; }
 
       /* 防止 iOS 自動放大輸入框 */
       input[type="text"], textarea, select, .auth-field input {
@@ -693,7 +700,7 @@
     @media (max-width: 340px) {
       .header h1 { font-size: 16px; }
       .auto-field .af-value { font-size: 13px; }
-      .type-btn { font-size: 11px; padding: 8px 2px; }
+      .al-btn { font-size: 14px; padding: 12px 6px; }
       .auth-card { padding: 20px 16px; }
     }
 
@@ -744,8 +751,9 @@
         background: #0f3460; color: #e0e0e0; border-color: #1a3a5c;
       }
       .auth-field input::placeholder, input::placeholder, textarea::placeholder { color: #7a8ba0; }
-      .type-btn { background: #16213e; border-color: #1a3a5c; color: #ccc; }
-      .type-btn.active { background: #0a3d2a; border-color: #06c755; color: #06c755; }
+      .al-btn { background: #16213e; border-color: #1a3a5c; color: #ccc; }
+      .al-btn.active-arrive { background: #0a3d2a; border-color: #06c755; color: #06c755; }
+      .al-btn.active-leave { background: #3d2a00; border-color: #ff9800; color: #ffb74d; }
       .user-bar { background: #16213e; }
       .user-bar .ub-name { color: #bbb; }
       .bottom-nav { background: #16213e; border-color: #1a3a5c; }
@@ -931,20 +939,27 @@
       </div>
 
       <div class="input-group">
-        <div class="input-label">📋 事項類型 <span class="required">*必選</span></div>
-        <div class="type-grid" id="type-grid">
-          <!-- 動態載入事項類型 -->
+        <div class="input-label">📋 回報類型 <span class="required">*必選</span></div>
+        <div class="arrive-leave-bar">
+          <button class="al-btn" id="al-arrive" onclick="selectArriveLeave('到達')">
+            <span class="al-icon">📍</span>到達
+          </button>
+          <button class="al-btn" id="al-leave" onclick="selectArriveLeave('離開')">
+            <span class="al-icon">🚗</span>離開
+          </button>
         </div>
       </div>
 
-      <div class="input-group">
-        <div class="input-label">📍 地點 <span class="required">*必填</span></div>
-        <input type="text" id="input-location" placeholder="例如：板橋地方法院、XX派出所" />
-      </div>
+      <div id="arrive-fields" style="display:none">
+        <div class="input-group">
+          <div class="input-label">📍 地點 <span class="required">*必填</span></div>
+          <input type="text" id="input-location" placeholder="例如：板橋地方法院、XX派出所" />
+        </div>
 
-      <div class="input-group">
-        <div class="input-label">📝 處理內容 <span class="required">*必填</span></div>
-        <textarea id="input-task" placeholder="請輸入處理內容或進度..."></textarea>
+        <div class="input-group">
+          <div class="input-label">📝 處理內容 <span class="required">*必填</span></div>
+          <textarea id="input-task" placeholder="請輸入處理內容或進度..."></textarea>
+        </div>
       </div>
 
       <button class="submit-btn" id="submit-btn" onclick="submitReport()">送出回報</button>
@@ -1094,18 +1109,21 @@
       <div class="modal-title">編輯回報</div>
       <input type="hidden" id="edit-id" />
       <div class="modal-field">
-        <label>事項類型</label>
-        <select id="edit-type">
-          <!-- 動態載入事項類型 -->
+        <label>回報類型</label>
+        <select id="edit-type" onchange="toggleEditFields()">
+          <option value="到達">📍 到達</option>
+          <option value="離開">🚗 離開</option>
         </select>
       </div>
-      <div class="modal-field">
-        <label>地點</label>
-        <input type="text" id="edit-location" />
-      </div>
-      <div class="modal-field">
-        <label>處理內容</label>
-        <textarea id="edit-task"></textarea>
+      <div id="edit-arrive-fields">
+        <div class="modal-field">
+          <label>地點</label>
+          <input type="text" id="edit-location" />
+        </div>
+        <div class="modal-field">
+          <label>處理內容</label>
+          <textarea id="edit-task"></textarea>
+        </div>
       </div>
       <div class="modal-btns">
         <button class="modal-btn-cancel" onclick="closeEditModal()">取消</button>
@@ -1141,41 +1159,30 @@
     let gpsLat = null, gpsLng = null, selectedType = '';
     let authToken = localStorage.getItem('authToken') || '';
     let currentUser = null;
-    let taskTypes = []; // 從 API 載入
 
-    // ====== 載入事項類型 ======
-    async function loadTaskTypes() {
-      try {
-        const res = await fetch('/api/task-types', {
-          headers: { 'Authorization': 'Bearer ' + authToken },
-        });
-        if (!res.ok) return;
-        taskTypes = await res.json();
-        renderTypeButtons();
-        renderEditTypeOptions();
-      } catch (e) {
-        console.error('載入類型失敗:', e);
-      }
-    }
+    // ====== 到達/離開切換 ======
+    function selectArriveLeave(type) {
+      selectedType = type;
+      const arriveBtn = document.getElementById('al-arrive');
+      const leaveBtn = document.getElementById('al-leave');
+      const arriveFields = document.getElementById('arrive-fields');
 
-    function renderTypeButtons() {
-      const grid = document.getElementById('type-grid');
-      if (!taskTypes.length) {
-        grid.innerHTML = '<div style="color:#999;font-size:13px;padding:8px">載入中...</div>';
-        return;
+      arriveBtn.className = 'al-btn' + (type === '到達' ? ' active-arrive' : '');
+      leaveBtn.className = 'al-btn' + (type === '離開' ? ' active-leave' : '');
+
+      if (type === '到達') {
+        arriveFields.style.display = '';
+      } else {
+        arriveFields.style.display = 'none';
+        // 清空欄位
+        document.getElementById('input-location').value = '';
+        document.getElementById('input-task').value = '';
       }
-      grid.innerHTML = taskTypes.map(t =>
-        `<button class="type-btn" onclick="selectType(this, '${t.name.replace(/'/g, "\\'")}')">
-          <span class="type-icon">${t.emoji || '📌'}</span>${t.name}
-        </button>`
-      ).join('');
     }
 
     function renderEditTypeOptions() {
       const sel = document.getElementById('edit-type');
-      sel.innerHTML = taskTypes.map(t =>
-        `<option value="${t.name}">${t.emoji || '📌'} ${t.name}</option>`
-      ).join('');
+      sel.innerHTML = '<option value="到達">📍 到達</option><option value="離開">🚗 離開</option>';
     }
 
     // ====== 畫面切換 ======
@@ -1333,7 +1340,7 @@
       updateDateTime();
       getGPS();
       loadTodayCount();
-      loadTaskTypes();
+      renderEditTypeOptions();
       loadQuickReports();
     }
 
@@ -1361,11 +1368,9 @@
     }
 
     function fillQuickReport(type, location, task) {
-      // 選擇類型
-      selectedType = type;
-      document.querySelectorAll('.type-btn').forEach(b => {
-        b.classList.toggle('active', b.textContent.trim().includes(type));
-      });
+      // 選擇到達/離開
+      const mappedType = (type === '離開') ? '離開' : '到達';
+      selectArriveLeave(mappedType);
       // 填入地點和內容
       document.getElementById('input-location').value = location.replace(/\\n/g, '\n');
       document.getElementById('input-task').value = task.replace(/\\n/g, '\n');
@@ -1419,12 +1424,7 @@
     }
     setInterval(updateDateTime, 30000);
 
-    // ====== 事項類型 ======
-    function selectType(btn, type) {
-      document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      selectedType = type;
-    }
+    // ====== 事項類型（已改為到達/離開） ======
 
     // ====== GPS ======
     function getGPS() {
@@ -1453,17 +1453,19 @@
           statusEl.className = 'gps-status gps-error';
           coordsEl.textContent = '將不會記錄 GPS 座標';
         },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     }
 
     // ====== 送出回報 ======
     async function submitReport() {
-      if (!selectedType) { alert('請選擇事項類型'); return; }
+      if (!selectedType) { alert('請選擇回報類型（到達或離開）'); return; }
       const location = document.getElementById('input-location').value.trim();
       const task = document.getElementById('input-task').value.trim();
-      if (!location) { alert('請填寫地點'); return; }
-      if (!task) { alert('請填寫處理內容'); return; }
+      if (selectedType === '到達') {
+        if (!location) { alert('請填寫地點'); return; }
+        if (!task) { alert('請填寫處理內容'); return; }
+      }
 
       const btn = document.getElementById('submit-btn');
       btn.disabled = true;
@@ -1502,15 +1504,19 @@
       const dateStr = document.getElementById('auto-date').textContent;
       const timeStr = document.getElementById('auto-time').textContent;
       const gpsStr = gpsLat ? `${gpsLat.toFixed(6)}, ${gpsLng.toFixed(6)}` : '未取得';
-      document.getElementById('success-detail').innerHTML = `
+      let detailHtml = `
         <div class="sd-row"><div class="sd-label">👤 人員</div><div class="sd-value">${escHtml(currentUser.displayName)}</div></div>
         <div class="sd-row"><div class="sd-label">📅 日期</div><div class="sd-value">${dateStr}</div></div>
         <div class="sd-row"><div class="sd-label">🕐 時間</div><div class="sd-value">${timeStr}</div></div>
-        <div class="sd-row"><div class="sd-label">📋 類型</div><div class="sd-value">${escHtml(selectedType)}</div></div>
+        <div class="sd-row"><div class="sd-label">📋 類型</div><div class="sd-value">${selectedType === '到達' ? '📍 到達' : '🚗 離開'}</div></div>`;
+      if (selectedType === '到達') {
+        detailHtml += `
         <div class="sd-row"><div class="sd-label">📍 地點</div><div class="sd-value">${escHtml(location)}</div></div>
-        <div class="sd-row"><div class="sd-label">📝 內容</div><div class="sd-value">${escHtml(task)}</div></div>
-        <div class="sd-row"><div class="sd-label">🛰️ GPS</div><div class="sd-value">${gpsStr}</div></div>
-      `;
+        <div class="sd-row"><div class="sd-label">📝 內容</div><div class="sd-value">${escHtml(task)}</div></div>`;
+      }
+      detailHtml += `
+        <div class="sd-row"><div class="sd-label">🛰️ GPS</div><div class="sd-value">${gpsStr}</div></div>`;
+      document.getElementById('success-detail').innerHTML = detailHtml;
       // 倒數自動返回
       if (countdownTimer) clearInterval(countdownTimer);
       let sec = 5;
@@ -1534,7 +1540,9 @@
       document.getElementById('submit-btn').disabled = false;
       document.getElementById('submit-btn').textContent = '送出回報';
       selectedType = '';
-      document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('al-arrive').className = 'al-btn';
+      document.getElementById('al-leave').className = 'al-btn';
+      document.getElementById('arrive-fields').style.display = 'none';
       updateDateTime();
       getGPS();
       loadTodayCount();
@@ -1743,23 +1751,27 @@
         document.getElementById('records-summary').style.display = 'block';
         document.getElementById('records-total').textContent = result.total;
 
-        listEl.innerHTML = result.data.map(r => `
+        listEl.innerHTML = result.data.map(r => {
+          const isLeave = r.task_type === '離開';
+          const typeStyle = isLeave ? 'background:#fff8e1;color:#e65100' : 'background:#f0faf4;color:#06c755';
+          const typeIcon = isLeave ? '🚗' : '📍';
+          return `
           <div class="record-card" data-id="${r.id}">
             <div class="record-top">
               <span class="record-datetime">📅 ${escHtml(r.report_date)}　🕐 ${escHtml(r.report_time)}</span>
-              <span class="record-type">${escHtml(r.task_type)}</span>
+              <span class="record-type" style="${typeStyle}">${typeIcon} ${escHtml(r.task_type)}</span>
             </div>
             <div class="record-body">
-              <div class="rb-row"><span class="rb-label">📍 地點：</span>${escHtml(r.location)}</div>
-              <div class="rb-row"><span class="rb-label">📝 內容：</span>${escHtml(r.task_description)}</div>
+              ${r.location ? `<div class="rb-row"><span class="rb-label">📍 地點：</span>${escHtml(r.location)}</div>` : ''}
+              ${r.task_description ? `<div class="rb-row"><span class="rb-label">📝 內容：</span>${escHtml(r.task_description)}</div>` : ''}
               ${r.gps_latitude ? `<div class="rb-row"><span class="rb-label">🛰️ GPS：</span><a href="https://maps.google.com/?q=${r.gps_latitude},${r.gps_longitude}" target="_blank" style="color:#1976d2;text-decoration:none;font-size:12px">查看地圖</a></div>` : ''}
             </div>
             <div class="record-actions">
               <button class="btn-edit" onclick="openEditModal(${r.id}, '${escAttr(r.task_type)}', '${escAttr(r.location)}', '${escAttr(r.task_description)}')">✏️ 編輯</button>
               <button class="btn-delete" onclick="openDeleteConfirm(${r.id})">🗑️ 刪除</button>
             </div>
-          </div>
-        `).join('');
+          </div>`;
+        }).join('');
       } catch (e) {
         listEl.innerHTML = '<div class="records-empty">載入失敗，請重試</div>';
       }
@@ -1776,11 +1788,17 @@
     }
 
     // ====== 編輯彈窗 ======
+    function toggleEditFields() {
+      const type = document.getElementById('edit-type').value;
+      document.getElementById('edit-arrive-fields').style.display = type === '離開' ? 'none' : '';
+    }
+
     function openEditModal(id, taskType, location, task) {
       document.getElementById('edit-id').value = id;
-      document.getElementById('edit-type').value = taskType || '其他';
+      document.getElementById('edit-type').value = (taskType === '離開') ? '離開' : '到達';
       document.getElementById('edit-location').value = location || '';
       document.getElementById('edit-task').value = (task || '').replace(/\\n/g, '\n');
+      toggleEditFields();
       document.getElementById('edit-modal').classList.add('show');
     }
 
@@ -1794,7 +1812,7 @@
       const location = document.getElementById('edit-location').value.trim();
       const task = document.getElementById('edit-task').value.trim();
 
-      if (!location || !task) { alert('地點和處理內容不能為空'); return; }
+      if (taskType !== '離開' && (!location || !task)) { alert('地點和處理內容不能為空'); return; }
 
       const btn = document.getElementById('edit-save-btn');
       btn.disabled = true;

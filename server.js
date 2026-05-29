@@ -545,7 +545,8 @@ app.post('/api/submit-report', requireAuth, async (req, res) => {
   const { taskType, location, task, latitude, longitude } = req.body;
   const { userId, displayName } = req.session;
 
-  if (!location || !task) {
+  // 「到達」需要地點和處理內容；「離開」不需要
+  if (taskType !== '離開' && (!location || !task)) {
     return res.status(400).json({ error: '請填寫地點和處理內容' });
   }
 
@@ -555,7 +556,7 @@ app.post('/api/submit-report', requireAuth, async (req, res) => {
     await db.execute({
       sql: `INSERT INTO reports (user_id, display_name, group_id, report_date, report_time, task_type, location, task_description, gps_latitude, gps_longitude)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [userId, displayName, 'web', tw.date, tw.time, taskType || '其他', location, task, latitude || null, longitude || null],
+      args: [userId, displayName, 'web', tw.date, tw.time, taskType || '到達', location || '', task || '', latitude || null, longitude || null],
     });
 
     res.json({ success: true, message: '回報成功！' });
@@ -795,7 +796,8 @@ app.put('/api/reports/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { taskType, location, task } = req.body;
 
-  if (!location || !task) {
+  // 「到達」需要地點和處理內容；「離開」不需要
+  if (taskType !== '離開' && (!location || !task)) {
     return res.status(400).json({ error: '地點和處理內容不能為空' });
   }
 
@@ -811,7 +813,7 @@ app.put('/api/reports/:id', requireAuth, async (req, res) => {
 
     await db.execute({
       sql: 'UPDATE reports SET task_type = ?, location = ?, task_description = ? WHERE id = ?',
-      args: [taskType || '其他', location, task, Number(id)],
+      args: [taskType || '到達', location || '', task || '', Number(id)],
     });
 
     res.json({ success: true });
