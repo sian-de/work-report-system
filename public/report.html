@@ -536,7 +536,6 @@
     .report-table th:nth-child(4) { width: 10%; }
     .report-table th:nth-child(5) { width: 20%; }
     .report-table th:nth-child(6) { width: 47%; }
-    .report-table .gps-sub { display: block; font-size: 10px; color: #999; margin-top: 3px; font-weight: normal; }
     .report-table td {
       padding: 9px 8px;
       border-bottom: 1px solid #f0f2f5;
@@ -572,7 +571,6 @@
       .print-area .report-table th:nth-child(4) { width: 10%; }
       .print-area .report-table th:nth-child(5) { width: 18%; }
       .print-area .report-table th:nth-child(6) { width: 52%; }
-      .print-area .report-table .gps-sub { font-size: 8px; color: #666; }
       .print-area .stat-box { border: 1px solid #ddd; }
       .no-print { display: none !important; }
     }
@@ -1966,14 +1964,13 @@
           tbodyHtml += `<tr class="date-group"><td colspan="6">📅 ${escHtml(lastDate)}（${dayCount} 筆）</td></tr>`;
         }
         rowNum++;
-        const gpsHtml = r.gps_latitude ? `<span class="gps-sub">📡 ${Number(r.gps_latitude).toFixed(5)}<br>${Number(r.gps_longitude).toFixed(5)}</span>` : '';
         tbodyHtml += `<tr>
           <td>${rowNum}</td>
           <td>${escHtml(r.report_date)}</td>
           <td>${escHtml(r.report_time || '')}</td>
           <td>${escHtml(r.task_type || '')}</td>
-          <td>${escHtml(r.location || '')}${gpsHtml}</td>
-          <td>${escHtml(r.task_description || '')}</td>
+          <td>${escHtml(r.location || '-')}</td>
+          <td>${escHtml(r.task_description || '-')}</td>
         </tr>`;
       });
 
