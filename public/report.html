@@ -736,30 +736,6 @@
       .auth-card { padding: 20px 16px; }
     }
 
-    /* ====== 快速回報區 ====== */
-    .quick-report { margin-bottom: 14px; }
-    .quick-report-title { font-size: 13px; color: #888; margin-bottom: 8px; font-weight: 600; }
-    .quick-card {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background: white;
-      border: 2px solid #e8e8e8;
-      border-radius: 12px;
-      padding: 10px 14px;
-      margin-bottom: 6px;
-      cursor: pointer;
-      transition: all 0.15s;
-      -webkit-appearance: none;
-      width: 100%;
-      text-align: left;
-      font-family: inherit;
-    }
-    .quick-card:active { transform: scale(0.98); border-color: #06c755; }
-    .quick-card .qc-type { font-size: 13px; font-weight: 600; color: #06c755; white-space: nowrap; }
-    .quick-card .qc-detail { flex: 1; font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .quick-card .qc-arrow { color: #ccc; font-size: 14px; }
-
     /* ====== 空狀態 ====== */
     .empty-fancy {
       text-align: center;
@@ -824,8 +800,6 @@
       .stat-box .stat-label { color: #888; }
       .type-stat-row { border-color: #1a3a5c; color: #ccc; }
       .type-stat-bar { background: #1a3a5c; }
-      .quick-card { background: #16213e; border-color: #1a3a5c; }
-      .quick-card .qc-detail { color: #999; }
     }
   </style>
 </head>
@@ -955,12 +929,6 @@
           <button onclick="openChangePwModal()">修改密碼</button>
           <button onclick="doLogout()">登出</button>
         </div>
-      </div>
-
-      <!-- 快速回報區 -->
-      <div class="quick-report" id="quick-report" style="display:none">
-        <div class="quick-report-title">⚡ 快速回報（最近紀錄）</div>
-        <div id="quick-report-list"></div>
       </div>
 
       <div class="gps-card">
@@ -1390,41 +1358,6 @@
       getGPS();
       loadTodayCount();
       renderEditTypeOptions();
-      loadQuickReports();
-    }
-
-    // ====== 快速回報（最近紀錄） ======
-    async function loadQuickReports() {
-      try {
-        const res = await fetch('/api/my-reports?limit=3', {
-          headers: { 'Authorization': 'Bearer ' + authToken },
-        });
-        if (!res.ok) return;
-        const result = await res.json();
-        if (!result.data || result.data.length === 0) {
-          document.getElementById('quick-report').style.display = 'none';
-          return;
-        }
-        document.getElementById('quick-report').style.display = '';
-        document.getElementById('quick-report-list').innerHTML = result.data.map(r => `
-          <button class="quick-card" onclick="fillQuickReport('${escAttr(r.task_type || '')}', '${escAttr(r.location || '')}', '${escAttr(r.task_description || '')}')">
-            <span class="qc-type">${escHtml(r.task_type || '其他')}</span>
-            <span class="qc-detail">📍 ${escHtml(r.location || '')} - ${escHtml(r.task_description || '')}</span>
-            <span class="qc-arrow">›</span>
-          </button>
-        `).join('');
-      } catch(e) {}
-    }
-
-    function fillQuickReport(type, location, task) {
-      // 選擇對應類型
-      const mappedType = typeConfig[type] ? type : '到達';
-      selectReportType(mappedType);
-      // 填入地點和內容
-      document.getElementById('input-location').value = location.replace(/\\n/g, '\n');
-      document.getElementById('input-task').value = task.replace(/\\n/g, '\n');
-      // 滑動到表單
-      document.getElementById('input-location').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     // ====== 自動檢查登入狀態 ======
