@@ -149,18 +149,18 @@
     }
     .input-label .required { color: #e53935; font-size: 12px; }
 
-    /* 到達/離開切換按鈕 */
+    /* 回報類型按鈕 */
     .arrive-leave-bar {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
     }
     .al-btn {
-      padding: 16px 10px;
+      padding: 14px 10px;
       border: 3px solid #e8e8e8;
       border-radius: 14px;
       background: white;
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 600;
       cursor: pointer;
       text-align: center;
@@ -169,7 +169,7 @@
       color: #666;
     }
     .al-btn:active { transform: scale(0.97); }
-    .al-btn .al-icon { font-size: 28px; display: block; margin-bottom: 6px; }
+    .al-btn .al-icon { font-size: 24px; display: block; margin-bottom: 4px; }
     .al-btn.active-arrive {
       border-color: #06c755;
       background: #f0faf4;
@@ -181,6 +181,18 @@
       background: #fff8e1;
       color: #e65100;
       box-shadow: 0 2px 12px rgba(255,152,0,0.2);
+    }
+    .al-btn.active-onbus {
+      border-color: #1976d2;
+      background: #e3f2fd;
+      color: #1565c0;
+      box-shadow: 0 2px 12px rgba(25,118,210,0.2);
+    }
+    .al-btn.active-offbus {
+      border-color: #7b1fa2;
+      background: #f3e5f5;
+      color: #6a1b9a;
+      box-shadow: 0 2px 12px rgba(123,31,162,0.2);
     }
 
     input[type="text"], textarea {
@@ -754,6 +766,8 @@
       .al-btn { background: #16213e; border-color: #1a3a5c; color: #ccc; }
       .al-btn.active-arrive { background: #0a3d2a; border-color: #06c755; color: #06c755; }
       .al-btn.active-leave { background: #3d2a00; border-color: #ff9800; color: #ffb74d; }
+      .al-btn.active-onbus { background: #0a2a4d; border-color: #1976d2; color: #64b5f6; }
+      .al-btn.active-offbus { background: #2a0a3d; border-color: #7b1fa2; color: #ce93d8; }
       .user-bar { background: #16213e; }
       .user-bar .ub-name { color: #bbb; }
       .bottom-nav { background: #16213e; border-color: #1a3a5c; }
@@ -941,11 +955,17 @@
       <div class="input-group">
         <div class="input-label">📋 回報類型 <span class="required">*必選</span></div>
         <div class="arrive-leave-bar">
-          <button class="al-btn" id="al-arrive" onclick="selectArriveLeave('到達')">
+          <button class="al-btn" id="al-arrive" onclick="selectReportType('到達')">
             <span class="al-icon">📍</span>到達
           </button>
-          <button class="al-btn" id="al-leave" onclick="selectArriveLeave('離開')">
+          <button class="al-btn" id="al-leave" onclick="selectReportType('離開')">
             <span class="al-icon">🚗</span>離開
+          </button>
+          <button class="al-btn" id="al-onbus" onclick="selectReportType('隨車(上車)')">
+            <span class="al-icon">🚌</span>隨車(上車)
+          </button>
+          <button class="al-btn" id="al-offbus" onclick="selectReportType('隨車(下車)')">
+            <span class="al-icon">🚏</span>隨車(下車)
           </button>
         </div>
       </div>
@@ -1160,21 +1180,30 @@
     let authToken = localStorage.getItem('authToken') || '';
     let currentUser = null;
 
-    // ====== 到達/離開切換 ======
-    function selectArriveLeave(type) {
+    // ====== 回報類型切換 ======
+    const typeConfig = {
+      '到達':       { btnId: 'al-arrive',  css: 'active-arrive',  needFields: true },
+      '離開':       { btnId: 'al-leave',   css: 'active-leave',   needFields: false },
+      '隨車(上車)': { btnId: 'al-onbus',   css: 'active-onbus',   needFields: true },
+      '隨車(下車)': { btnId: 'al-offbus',  css: 'active-offbus',  needFields: true },
+    };
+
+    function selectReportType(type) {
       selectedType = type;
-      const arriveBtn = document.getElementById('al-arrive');
-      const leaveBtn = document.getElementById('al-leave');
-      const arriveFields = document.getElementById('arrive-fields');
+      // 清除所有按鈕狀態
+      Object.values(typeConfig).forEach(c => {
+        document.getElementById(c.btnId).className = 'al-btn';
+      });
+      // 設定選中按鈕
+      const cfg = typeConfig[type];
+      if (cfg) document.getElementById(cfg.btnId).className = 'al-btn ' + cfg.css;
 
-      arriveBtn.className = 'al-btn' + (type === '到達' ? ' active-arrive' : '');
-      leaveBtn.className = 'al-btn' + (type === '離開' ? ' active-leave' : '');
-
-      if (type === '到達') {
-        arriveFields.style.display = '';
+      // 顯示/隱藏欄位
+      const fields = document.getElementById('arrive-fields');
+      if (cfg && cfg.needFields) {
+        fields.style.display = '';
       } else {
-        arriveFields.style.display = 'none';
-        // 清空欄位
+        fields.style.display = 'none';
         document.getElementById('input-location').value = '';
         document.getElementById('input-task').value = '';
       }
@@ -1182,7 +1211,7 @@
 
     function renderEditTypeOptions() {
       const sel = document.getElementById('edit-type');
-      sel.innerHTML = '<option value="到達">📍 到達</option><option value="離開">🚗 離開</option>';
+      sel.innerHTML = '<option value="到達">📍 到達</option><option value="離開">🚗 離開</option><option value="隨車(上車)">🚌 隨車(上車)</option><option value="隨車(下車)">🚏 隨車(下車)</option>';
     }
 
     // ====== 畫面切換 ======
@@ -1368,9 +1397,9 @@
     }
 
     function fillQuickReport(type, location, task) {
-      // 選擇到達/離開
-      const mappedType = (type === '離開') ? '離開' : '到達';
-      selectArriveLeave(mappedType);
+      // 選擇對應類型
+      const mappedType = typeConfig[type] ? type : '到達';
+      selectReportType(mappedType);
       // 填入地點和內容
       document.getElementById('input-location').value = location.replace(/\\n/g, '\n');
       document.getElementById('input-task').value = task.replace(/\\n/g, '\n');
@@ -1459,10 +1488,10 @@
 
     // ====== 送出回報 ======
     async function submitReport() {
-      if (!selectedType) { alert('請選擇回報類型（到達或離開）'); return; }
+      if (!selectedType) { alert('請選擇回報類型'); return; }
       const location = document.getElementById('input-location').value.trim();
       const task = document.getElementById('input-task').value.trim();
-      if (selectedType === '到達') {
+      if (selectedType !== '離開') {
         if (!location) { alert('請填寫地點'); return; }
         if (!task) { alert('請填寫處理內容'); return; }
       }
@@ -1508,8 +1537,8 @@
         <div class="sd-row"><div class="sd-label">👤 人員</div><div class="sd-value">${escHtml(currentUser.displayName)}</div></div>
         <div class="sd-row"><div class="sd-label">📅 日期</div><div class="sd-value">${dateStr}</div></div>
         <div class="sd-row"><div class="sd-label">🕐 時間</div><div class="sd-value">${timeStr}</div></div>
-        <div class="sd-row"><div class="sd-label">📋 類型</div><div class="sd-value">${selectedType === '到達' ? '📍 到達' : '🚗 離開'}</div></div>`;
-      if (selectedType === '到達') {
+        <div class="sd-row"><div class="sd-label">📋 類型</div><div class="sd-value">${{'到達':'📍 到達','離開':'🚗 離開','隨車(上車)':'🚌 隨車(上車)','隨車(下車)':'🚏 隨車(下車)'}[selectedType] || selectedType}</div></div>`;
+      if (selectedType !== '離開') {
         detailHtml += `
         <div class="sd-row"><div class="sd-label">📍 地點</div><div class="sd-value">${escHtml(location)}</div></div>
         <div class="sd-row"><div class="sd-label">📝 內容</div><div class="sd-value">${escHtml(task)}</div></div>`;
@@ -1540,8 +1569,9 @@
       document.getElementById('submit-btn').disabled = false;
       document.getElementById('submit-btn').textContent = '送出回報';
       selectedType = '';
-      document.getElementById('al-arrive').className = 'al-btn';
-      document.getElementById('al-leave').className = 'al-btn';
+      Object.values(typeConfig).forEach(c => {
+        document.getElementById(c.btnId).className = 'al-btn';
+      });
       document.getElementById('arrive-fields').style.display = 'none';
       updateDateTime();
       getGPS();
@@ -1752,9 +1782,15 @@
         document.getElementById('records-total').textContent = result.total;
 
         listEl.innerHTML = result.data.map(r => {
-          const isLeave = r.task_type === '離開';
-          const typeStyle = isLeave ? 'background:#fff8e1;color:#e65100' : 'background:#f0faf4;color:#06c755';
-          const typeIcon = isLeave ? '🚗' : '📍';
+          const typeStyles = {
+            '到達':       { style: 'background:#f0faf4;color:#06c755', icon: '📍' },
+            '離開':       { style: 'background:#fff8e1;color:#e65100', icon: '🚗' },
+            '隨車(上車)': { style: 'background:#e3f2fd;color:#1565c0', icon: '🚌' },
+            '隨車(下車)': { style: 'background:#f3e5f5;color:#6a1b9a', icon: '🚏' },
+          };
+          const ts = typeStyles[r.task_type] || typeStyles['到達'];
+          const typeStyle = ts.style;
+          const typeIcon = ts.icon;
           return `
           <div class="record-card" data-id="${r.id}">
             <div class="record-top">
@@ -1795,7 +1831,9 @@
 
     function openEditModal(id, taskType, location, task) {
       document.getElementById('edit-id').value = id;
-      document.getElementById('edit-type').value = (taskType === '離開') ? '離開' : '到達';
+      // 匹配已知類型，否則預設到達
+      const knownTypes = ['到達', '離開', '隨車(上車)', '隨車(下車)'];
+      document.getElementById('edit-type').value = knownTypes.includes(taskType) ? taskType : '到達';
       document.getElementById('edit-location').value = location || '';
       document.getElementById('edit-task').value = (task || '').replace(/\\n/g, '\n');
       toggleEditFields();
