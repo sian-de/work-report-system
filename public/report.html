@@ -529,13 +529,15 @@
       font-weight: 600;
       white-space: nowrap;
     }
-    /* 欄寬分配：# 日期 時間 類型 地點 處理內容 */
-    .report-table th:nth-child(1) { width: 5%; }
-    .report-table th:nth-child(2) { width: 11%; }
-    .report-table th:nth-child(3) { width: 7%; }
-    .report-table th:nth-child(4) { width: 10%; }
-    .report-table th:nth-child(5) { width: 20%; }
-    .report-table th:nth-child(6) { width: 47%; }
+    /* 欄寬分配：# 日期 時間 類型 地點 處理內容 GPS */
+    .report-table th:nth-child(1) { width: 4%; }
+    .report-table th:nth-child(2) { width: 8%; }
+    .report-table th:nth-child(3) { width: 6%; }
+    .report-table th:nth-child(4) { width: 9%; }
+    .report-table th:nth-child(5) { width: 16%; }
+    .report-table th:nth-child(6) { width: 45%; }
+    .report-table th:nth-child(7) { width: 12%; }
+    .report-table .gps-cell { font-size: 10px; color: #999; line-height: 1.5; }
     .report-table td {
       padding: 9px 8px;
       border-bottom: 1px solid #f0f2f5;
@@ -565,12 +567,14 @@
       .print-area .report-table { min-width: auto; font-size: 10px; table-layout: fixed; width: 100%; }
       .print-area .report-table th { background: #333 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 6px 5px; font-size: 10px; }
       .print-area .report-table td { padding: 5px 5px; font-size: 10px; word-wrap: break-word; overflow-wrap: break-word; }
-      .print-area .report-table th:nth-child(1) { width: 4%; }
-      .print-area .report-table th:nth-child(2) { width: 10%; }
-      .print-area .report-table th:nth-child(3) { width: 6%; }
-      .print-area .report-table th:nth-child(4) { width: 10%; }
-      .print-area .report-table th:nth-child(5) { width: 18%; }
-      .print-area .report-table th:nth-child(6) { width: 52%; }
+      .print-area .report-table th:nth-child(1) { width: 3%; }
+      .print-area .report-table th:nth-child(2) { width: 7%; }
+      .print-area .report-table th:nth-child(3) { width: 5%; }
+      .print-area .report-table th:nth-child(4) { width: 8%; }
+      .print-area .report-table th:nth-child(5) { width: 15%; }
+      .print-area .report-table th:nth-child(6) { width: 50%; }
+      .print-area .report-table th:nth-child(7) { width: 12%; }
+      .print-area .report-table .gps-cell { font-size: 8px; color: #666; }
       .print-area .stat-box { border: 1px solid #ddd; }
       .no-print { display: none !important; }
     }
@@ -1950,7 +1954,7 @@
 
       // 明細表格
       document.getElementById('report-thead').innerHTML = `
-        <tr><th>#</th><th>日期</th><th>時間</th><th>類型</th><th>地點</th><th>處理內容</th></tr>
+        <tr><th>#</th><th>日期</th><th>時間</th><th>類型</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
       `;
 
       // 按日期分組
@@ -1961,9 +1965,10 @@
         if (r.report_date !== lastDate) {
           lastDate = r.report_date;
           const dayCount = data.filter(d => d.report_date === lastDate).length;
-          tbodyHtml += `<tr class="date-group"><td colspan="6">📅 ${escHtml(lastDate)}（${dayCount} 筆）</td></tr>`;
+          tbodyHtml += `<tr class="date-group"><td colspan="7">📅 ${escHtml(lastDate)}（${dayCount} 筆）</td></tr>`;
         }
         rowNum++;
+        const gps = r.gps_latitude ? `${Number(r.gps_latitude).toFixed(5)}<br>${Number(r.gps_longitude).toFixed(5)}` : '-';
         tbodyHtml += `<tr>
           <td>${rowNum}</td>
           <td>${escHtml(r.report_date)}</td>
@@ -1971,11 +1976,12 @@
           <td>${escHtml(r.task_type || '')}</td>
           <td>${escHtml(r.location || '-')}</td>
           <td>${escHtml(r.task_description || '-')}</td>
+          <td class="gps-cell">${gps}</td>
         </tr>`;
       });
 
       if (totalCount === 0) {
-        tbodyHtml = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#999">此期間無回報紀錄</td></tr>';
+        tbodyHtml = '<tr><td colspan="7" style="text-align:center;padding:30px;color:#999">此期間無回報紀錄</td></tr>';
       }
 
       document.getElementById('report-tbody').innerHTML = tbodyHtml;
