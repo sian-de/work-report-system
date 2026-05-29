@@ -519,6 +519,7 @@
       border-collapse: collapse;
       font-size: 13px;
       min-width: 500px;
+      table-layout: fixed;
     }
     .report-table th {
       background: #06c755;
@@ -528,10 +529,20 @@
       font-weight: 600;
       white-space: nowrap;
     }
+    /* 欄寬分配：# 日期 時間 類型 地點 處理內容 GPS */
+    .report-table th:nth-child(1) { width: 5%; }
+    .report-table th:nth-child(2) { width: 12%; }
+    .report-table th:nth-child(3) { width: 8%; }
+    .report-table th:nth-child(4) { width: 10%; }
+    .report-table th:nth-child(5) { width: 18%; }
+    .report-table th:nth-child(6) { width: 37%; }
+    .report-table th:nth-child(7) { width: 10%; }
     .report-table td {
       padding: 9px 8px;
       border-bottom: 1px solid #f0f2f5;
       vertical-align: top;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
     .report-table tr:nth-child(even) { background: #fafafa; }
     .report-table .date-group {
@@ -542,6 +553,7 @@
     .report-table .date-group td { padding: 8px; }
 
     /* 列印樣式 */
+    @page { size: landscape; margin: 12mm; }
     @media print {
       body * { visibility: hidden; }
       .print-area, .print-area * { visibility: visible; }
@@ -549,10 +561,18 @@
         position: absolute;
         left: 0; top: 0;
         width: 100%;
-        padding: 20px;
+        padding: 10px;
       }
-      .print-area .report-table { min-width: auto; font-size: 11px; }
-      .print-area .report-table th { background: #333 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .print-area .report-table { min-width: auto; font-size: 10px; table-layout: fixed; width: 100%; }
+      .print-area .report-table th { background: #333 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 6px 5px; font-size: 10px; }
+      .print-area .report-table td { padding: 5px 5px; font-size: 10px; word-wrap: break-word; overflow-wrap: break-word; }
+      .print-area .report-table th:nth-child(1) { width: 4%; }
+      .print-area .report-table th:nth-child(2) { width: 10%; }
+      .print-area .report-table th:nth-child(3) { width: 7%; }
+      .print-area .report-table th:nth-child(4) { width: 10%; }
+      .print-area .report-table th:nth-child(5) { width: 16%; }
+      .print-area .report-table th:nth-child(6) { width: 43%; }
+      .print-area .report-table th:nth-child(7) { width: 10%; }
       .print-area .stat-box { border: 1px solid #ddd; }
       .no-print { display: none !important; }
     }
