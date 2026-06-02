@@ -152,7 +152,27 @@
     .btn-secondary { background: #f0f0f0; color: #555; }
     .btn-export { background: linear-gradient(135deg, #4a90d9, #3a7bc8); color: white; }
     .btn-danger { background: #e53935; color: white; font-size: 12px; padding: 6px 14px; }
+    .btn-danger-full { background: #e53935; color: white; }
     .filter-bar .spacer { flex: 1; }
+
+    /* Toast 通知 */
+    #toast-container {
+      position: fixed; top: 72px; right: 20px; z-index: 300;
+      display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+    }
+    .toast {
+      background: #333; color: white; padding: 12px 18px; border-radius: 10px;
+      font-size: 14px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      opacity: 0; transform: translateX(20px); transition: opacity .25s, transform .25s;
+      max-width: 320px; word-break: break-word;
+    }
+    .toast.show { opacity: 1; transform: translateX(0); }
+    .toast-success { background: #06c755; }
+    .toast-error { background: #e53935; }
+    .toast-info { background: #4a90d9; }
+
+    /* 對話框文字 */
+    .dialog-text { font-size: 14px; color: #555; line-height: 1.6; white-space: pre-line; margin-bottom: 20px; }
 
     /* 回報列表 */
     .report-list { margin-top: 8px; }
@@ -513,6 +533,10 @@
       .add-form-row { flex-direction: column; }
       .add-form-row input { font-size: 16px; }
       .add-form-row .btn { width: 100%; text-align: center; }
+
+      /* Toast */
+      #toast-container { top: 60px; left: 12px; right: 12px; }
+      .toast { max-width: none; }
     }
 
     @media (max-width: 380px) {
@@ -569,6 +593,7 @@
       .add-form-row input { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
       .mgmt-header h2 { color: #e0e0e0; }
       .assign-bar select { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
+      .dialog-text { color: #bbb; }
     }
   </style>
 </head>
@@ -608,11 +633,11 @@
 
     <div class="container">
       <div class="tabs" id="admin-tabs">
-        <button class="tab-btn active" onclick="switchTab('reports')">📊 回報紀錄</button>
-        <button class="tab-btn" onclick="switchTab('users')">👥 人員管理</button>
-        <button class="tab-btn" onclick="switchTab('types')" id="tab-btn-types" style="display:none">🏷️ 類型管理</button>
-        <button class="tab-btn" onclick="switchTab('groups')" id="tab-btn-groups" style="display:none">🏢 分組管理</button>
-        <button class="tab-btn" onclick="switchTab('status')" id="tab-btn-status" style="display:none">📊 回報狀態</button>
+        <button class="tab-btn active" data-tab="reports" onclick="switchTab('reports')">📊 回報紀錄</button>
+        <button class="tab-btn" data-tab="users" onclick="switchTab('users')">👥 人員管理</button>
+        <button class="tab-btn" data-tab="types" onclick="switchTab('types')" id="tab-btn-types" style="display:none">🏷️ 類型管理</button>
+        <button class="tab-btn" data-tab="groups" onclick="switchTab('groups')" id="tab-btn-groups" style="display:none">🏢 分組管理</button>
+        <button class="tab-btn" data-tab="status" onclick="switchTab('status')" id="tab-btn-status" style="display:none">📊 回報狀態</button>
       </div>
 
       <!-- 回報紀錄頁籤 -->
@@ -745,6 +770,7 @@
     let autoRefreshTimer = null;
     let typeEmojiMap = {};  // 動態從 API 建立
     let expandedGroup = null; // 目前展開的群組
+    let currentTab = 'reports'; // 目前所在頁籤
 
     function authHeaders() {
       return { 'Authorization': 'Bearer ' + authToken };
@@ -801,6 +827,7 @@
       loadReports();
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
       autoRefreshTimer = setInterval(() => {
+        if (currentTab !== 'reports') return; // 僅在回報紀錄頁籤自動更新，避免打斷其他頁籤操作
         loadSummary();
         loadReports(currentPage);
       }, 30000);
@@ -815,17 +842,10 @@
     }
 
     // ====== 頁籤 ======
-    const tabNames = ['reports', 'users', 'types', 'groups'];
     function switchTab(tab) {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      currentTab = tab;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      // 找到對應按鈕
-      const btns = document.querySelectorAll('.tab-btn');
-      btns.forEach(b => {
-        if (b.textContent.includes(tab === 'reports' ? '回報紀錄' : tab === 'users' ? '人員管理' : tab === 'types' ? '類型管理' : '分組管理')) {
-          b.classList.add('active');
-        }
-      });
       document.getElementById('tab-' + tab).classList.add('active');
       if (tab === 'users') loadUsers();
       if (tab === 'types') loadAllTaskTypes();
@@ -849,6 +869,81 @@
     function escAttr(s) {
       if (!s) return '';
       return s.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // 純文字轉義（不把換行轉成 <br>，交給 white-space:pre-line 處理）
+    function escPlain(s) {
+      if (!s && s !== 0) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // ====== Toast 通知（取代多數 alert）======
+    function toast(msg, type = 'info') {
+      let c = document.getElementById('toast-container');
+      if (!c) { c = document.createElement('div'); c.id = 'toast-container'; document.body.appendChild(c); }
+      const t = document.createElement('div');
+      t.className = 'toast toast-' + type;
+      t.textContent = msg;
+      c.appendChild(t);
+      requestAnimationFrame(() => t.classList.add('show'));
+      setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000);
+    }
+
+    // ====== 確認對話框（取代 confirm，回傳 Promise<bool>）======
+    function confirmDialog(message, opts = {}) {
+      const { title = '確認', okText = '確定', cancelText = '取消', danger = false } = opts;
+      return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay show';
+        overlay.innerHTML = `
+          <div class="modal-box" style="max-width:400px">
+            <div class="modal-title">${escPlain(title)}</div>
+            <div class="dialog-text">${escPlain(message)}</div>
+            <div class="modal-actions">
+              <button class="btn btn-secondary dlg-cancel">${escPlain(cancelText)}</button>
+              <button class="btn ${danger ? 'btn-danger-full' : 'btn-primary'} dlg-ok">${escPlain(okText)}</button>
+            </div>
+          </div>`;
+        document.body.appendChild(overlay);
+        const done = v => { overlay.remove(); resolve(v); };
+        overlay.querySelector('.dlg-ok').onclick = () => done(true);
+        overlay.querySelector('.dlg-cancel').onclick = () => done(false);
+        overlay.addEventListener('click', e => { if (e.target === overlay) done(false); });
+        setTimeout(() => overlay.querySelector('.dlg-ok').focus(), 50);
+      });
+    }
+
+    // ====== 輸入對話框（取代 prompt，回傳 Promise<string|null>）======
+    function promptDialog(opts = {}) {
+      const { title = '輸入', message = '', defaultValue = '', okText = '確定', type = 'text', placeholder = '' } = opts;
+      return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay show';
+        overlay.innerHTML = `
+          <div class="modal-box" style="max-width:400px">
+            <div class="modal-title">${escPlain(title)}</div>
+            ${message ? `<div class="dialog-text" style="margin-bottom:12px">${escPlain(message)}</div>` : ''}
+            <div class="modal-field">
+              <input type="${type}" class="dlg-input" placeholder="${escPlain(placeholder)}" />
+            </div>
+            <div class="modal-actions">
+              <button class="btn btn-secondary dlg-cancel">取消</button>
+              <button class="btn btn-primary dlg-ok">${escPlain(okText)}</button>
+            </div>
+          </div>`;
+        document.body.appendChild(overlay);
+        const input = overlay.querySelector('.dlg-input');
+        input.value = defaultValue;
+        const done = v => { overlay.remove(); resolve(v); };
+        overlay.querySelector('.dlg-ok').onclick = () => done(input.value);
+        overlay.querySelector('.dlg-cancel').onclick = () => done(null);
+        overlay.addEventListener('click', e => { if (e.target === overlay) done(null); });
+        input.addEventListener('keydown', e => {
+          if (e.key === 'Enter') done(input.value);
+          if (e.key === 'Escape') done(null);
+        });
+        setTimeout(() => input.focus(), 50);
+      });
     }
 
     // ====== 載入事項類型（前端用） ======
@@ -1018,12 +1113,12 @@
           const controlsHtml = canEdit ? `
             <div class="user-card-controls">
               <label>分組</label>
-              <select onchange="updateUserGroup('${escAttr(u.user_id)}', this.value)" id="group-sel-${escAttr(u.user_id)}">
+              <select onchange="updateUserGroupRole('${escAttr(u.user_id)}')" id="group-sel-${escAttr(u.user_id)}">
                 <option value="">未分組</option>
                 ${groupOpts}
               </select>
               <label>權限</label>
-              <select onchange="updateUserRole('${escAttr(u.user_id)}', this.value)">
+              <select onchange="updateUserGroupRole('${escAttr(u.user_id)}')" id="role-sel-${escAttr(u.user_id)}">
                 <option value="user" ${currentRole === 'user' ? 'selected' : ''}>一般職員</option>
                 <option value="supervisor" ${currentRole === 'supervisor' ? 'selected' : ''}>主管</option>
               </select>
@@ -1060,58 +1155,49 @@
       } catch (e) {}
     }
 
-    async function updateUserGroup(userId, groupId) {
+    // 同時讀取分組與權限兩個下拉選單，一次送出，避免任一欄位被覆蓋為 null
+    async function updateUserGroupRole(userId) {
+      const groupSel = document.getElementById('group-sel-' + userId);
+      const roleSel = document.getElementById('role-sel-' + userId);
+      const groupId = groupSel ? groupSel.value : '';
+      const isSupervisor = roleSel && roleSel.value === 'supervisor' ? 1 : 0;
       try {
-        const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
-          method: 'PUT', headers: jsonHeaders(),
-          body: JSON.stringify({ groupId: groupId || null, isSupervisor: null }),
-        });
-        if (!res.ok) { const d = await res.json(); alert(d.error || '設定失敗'); }
-        // 保留 is_supervisor 不變，只更新 group
-        // 需要重新取得使用者的 supervisor 狀態
-        loadUsers();
-      } catch (e) { alert('網路錯誤'); }
-    }
-
-    async function updateUserRole(userId, role) {
-      const isSupervisor = role === 'supervisor' ? 1 : 0;
-      try {
-        // 先取得使用者目前的 group_id
-        const userCard = document.getElementById('group-sel-' + userId);
-        const groupId = userCard ? userCard.value : null;
         const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
           method: 'PUT', headers: jsonHeaders(),
           body: JSON.stringify({ groupId: groupId || null, isSupervisor }),
         });
-        if (!res.ok) { const d = await res.json(); alert(d.error || '設定失敗'); }
+        if (!res.ok) { const d = await res.json(); toast(d.error || '設定失敗', 'error'); return; }
+        toast('已更新', 'success');
         loadUsers();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     async function deleteUser(userId, displayName) {
-      if (!confirm(`確定要刪除「${displayName}」嗎？\n\n此操作會同時刪除該人員的所有回報紀錄，無法復原！`)) return;
+      const ok = await confirmDialog(`確定要刪除「${displayName}」嗎？\n\n此操作會同時刪除該人員的所有回報紀錄，無法復原！`, { title: '刪除人員', okText: '刪除', danger: true });
+      if (!ok) return;
       try {
         const res = await fetch('/api/users/' + encodeURIComponent(userId), { method: 'DELETE', headers: authHeaders() });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '刪除失敗'); return; }
+        if (!res.ok) { toast(data.error || '刪除失敗', 'error'); return; }
+        toast('已刪除', 'success');
         loadUsers();
         loadSummary();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     async function resetPassword(userId, displayName) {
-      const newPw = prompt(`為「${displayName}」設定新密碼：\n（至少 4 個字元）`);
-      if (!newPw) return;
-      if (newPw.length < 4) { alert('密碼至少 4 個字元'); return; }
+      const newPw = await promptDialog({ title: '重設密碼', message: `為「${displayName}」設定新密碼（至少 4 個字元）`, type: 'password', placeholder: '輸入新密碼' });
+      if (newPw === null) return;
+      if (newPw.length < 4) { toast('密碼至少 4 個字元', 'error'); return; }
       try {
         const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/reset-password', {
           method: 'POST', headers: jsonHeaders(),
           body: JSON.stringify({ newPassword: newPw }),
         });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '重設失敗'); return; }
-        alert(`已成功重設「${displayName}」的密碼`);
-      } catch (e) { alert('網路錯誤'); }
+        if (!res.ok) { toast(data.error || '重設失敗', 'error'); return; }
+        toast(`已重設「${displayName}」的密碼`, 'success');
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     // ====== 編輯回報 ======
@@ -1132,28 +1218,31 @@
       const taskType = document.getElementById('edit-type').value;
       const location = document.getElementById('edit-location').value.trim();
       const task = document.getElementById('edit-task').value.trim();
-      if (!location || !task) { alert('地點和處理內容不能為空'); return; }
+      if (!location || !task) { toast('地點和處理內容不能為空', 'error'); return; }
 
       const btn = document.getElementById('edit-save-btn');
       btn.disabled = true; btn.textContent = '儲存中...';
       try {
         const res = await fetch('/api/reports/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ taskType, location, task }) });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '修改失敗'); btn.disabled = false; btn.textContent = '儲存'; return; }
+        if (!res.ok) { toast(data.error || '修改失敗', 'error'); btn.disabled = false; btn.textContent = '儲存'; return; }
         closeEditModal();
+        toast('已儲存', 'success');
         loadReports(currentPage);
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
       btn.disabled = false; btn.textContent = '儲存';
     }
 
     async function deleteReport(id) {
-      if (!confirm('確定要刪除這筆回報紀錄嗎？此操作無法復原！')) return;
+      const ok = await confirmDialog('確定要刪除這筆回報紀錄嗎？此操作無法復原！', { title: '刪除回報', okText: '刪除', danger: true });
+      if (!ok) return;
       try {
         const res = await fetch('/api/reports/' + id, { method: 'DELETE', headers: authHeaders() });
-        if (!res.ok) { const d = await res.json(); alert(d.error || '刪除失敗'); return; }
+        if (!res.ok) { const d = await res.json(); toast(d.error || '刪除失敗', 'error'); return; }
+        toast('已刪除', 'success');
         loadReports(currentPage);
         loadSummary();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     document.getElementById('edit-modal').addEventListener('click', (e) => {
@@ -1200,24 +1289,25 @@
     async function addTaskType() {
       const emoji = document.getElementById('new-type-emoji').value.trim() || '📌';
       const name = document.getElementById('new-type-name').value.trim();
-      if (!name) { alert('請輸入類型名稱'); return; }
+      if (!name) { toast('請輸入類型名稱', 'error'); return; }
       try {
         const res = await fetch('/api/task-types', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name, emoji }) });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '新增失敗'); return; }
+        if (!res.ok) { toast(data.error || '新增失敗', 'error'); return; }
+        toast('已新增類型', 'success');
         toggleAddTypeForm();
         loadAllTaskTypes();
         loadTaskTypesForAdmin();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     async function toggleType(id, newActive) {
       try {
         const res = await fetch('/api/task-types/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ is_active: newActive }) });
-        if (!res.ok) { const d = await res.json(); alert(d.error || '修改失敗'); return; }
+        if (!res.ok) { const d = await res.json(); toast(d.error || '修改失敗', 'error'); return; }
         loadAllTaskTypes();
         loadTaskTypesForAdmin();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     async function moveType(id, direction) {
@@ -1240,32 +1330,37 @@
         ]);
         loadAllTaskTypes();
         loadTaskTypesForAdmin();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
-    function editTypeName(id, currentName, currentEmoji) {
-      const newName = prompt('修改類型名稱：', currentName);
-      if (!newName || newName.trim() === currentName) return;
-      const newEmoji = prompt('修改 Emoji：', currentEmoji);
-      fetch('/api/task-types/' + id, {
-        method: 'PUT', headers: jsonHeaders(),
-        body: JSON.stringify({ name: newName.trim(), emoji: newEmoji || currentEmoji }),
-      }).then(r => r.json()).then(d => {
-        if (d.error) { alert(d.error); return; }
+    async function editTypeName(id, currentName, currentEmoji) {
+      const newName = await promptDialog({ title: '修改類型名稱', defaultValue: currentName, placeholder: '類型名稱' });
+      if (newName === null || newName.trim() === '' || newName.trim() === currentName) return;
+      const newEmoji = await promptDialog({ title: '修改 Emoji', defaultValue: currentEmoji, placeholder: 'Emoji' });
+      try {
+        const res = await fetch('/api/task-types/' + id, {
+          method: 'PUT', headers: jsonHeaders(),
+          body: JSON.stringify({ name: newName.trim(), emoji: (newEmoji && newEmoji.trim()) || currentEmoji }),
+        });
+        const d = await res.json();
+        if (!res.ok) { toast(d.error || '修改失敗', 'error'); return; }
+        toast('已更新', 'success');
         loadAllTaskTypes();
         loadTaskTypesForAdmin();
-      }).catch(() => alert('網路錯誤'));
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     async function deleteType(id, name) {
-      if (!confirm(`確定要刪除類型「${name}」嗎？`)) return;
+      const ok = await confirmDialog(`確定要刪除類型「${name}」嗎？`, { title: '刪除類型', okText: '刪除', danger: true });
+      if (!ok) return;
       try {
         const res = await fetch('/api/task-types/' + id, { method: 'DELETE', headers: authHeaders() });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '刪除失敗'); return; }
+        if (!res.ok) { toast(data.error || '刪除失敗', 'error'); return; }
+        toast('已刪除', 'success');
         loadAllTaskTypes();
         loadTaskTypesForAdmin();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     // ====== 分組管理 ======
@@ -1378,49 +1473,57 @@
 
     async function addGroup() {
       const name = document.getElementById('new-group-name').value.trim();
-      if (!name) { alert('請輸入群組名稱'); return; }
+      if (!name) { toast('請輸入群組名稱', 'error'); return; }
       try {
         const res = await fetch('/api/groups', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name }) });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '新增失敗'); return; }
+        if (!res.ok) { toast(data.error || '新增失敗', 'error'); return; }
+        toast('已新增群組', 'success');
         toggleAddGroupForm();
         loadGroups();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
-    function editGroupName(id, currentName) {
-      const newName = prompt('修改群組名稱：', currentName);
-      if (!newName || newName.trim() === currentName) return;
-      fetch('/api/groups/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ name: newName.trim() }) })
-        .then(r => r.json()).then(d => { if (d.error) alert(d.error); else loadGroups(); })
-        .catch(() => alert('網路錯誤'));
+    async function editGroupName(id, currentName) {
+      const newName = await promptDialog({ title: '修改群組名稱', defaultValue: currentName, placeholder: '群組名稱' });
+      if (newName === null || newName.trim() === '' || newName.trim() === currentName) return;
+      try {
+        const res = await fetch('/api/groups/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ name: newName.trim() }) });
+        const d = await res.json();
+        if (!res.ok) { toast(d.error || '修改失敗', 'error'); return; }
+        toast('已更新', 'success');
+        loadGroups();
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     async function deleteGroup(id, name) {
-      if (!confirm(`確定要刪除群組「${name}」嗎？\n（須先移除所有成員）`)) return;
+      const ok = await confirmDialog(`確定要刪除群組「${name}」嗎？\n（須先移除所有成員）`, { title: '刪除群組', okText: '刪除', danger: true });
+      if (!ok) return;
       try {
         const res = await fetch('/api/groups/' + id, { method: 'DELETE', headers: authHeaders() });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '刪除失敗'); return; }
+        if (!res.ok) { toast(data.error || '刪除失敗', 'error'); return; }
+        toast('已刪除', 'success');
         if (expandedGroup === id) expandedGroup = null;
         loadGroups();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     async function assignMember(groupId) {
       const sel = document.getElementById('assign-select-' + groupId);
       const userId = sel.value;
-      if (!userId) { alert('請選擇成員'); return; }
+      if (!userId) { toast('請選擇成員', 'error'); return; }
       try {
         const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
           method: 'PUT', headers: jsonHeaders(),
           body: JSON.stringify({ groupId: groupId, isSupervisor: false }),
         });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '指派失敗'); return; }
+        if (!res.ok) { toast(data.error || '指派失敗', 'error'); return; }
+        toast('已加入群組', 'success');
         loadGroupMembers(groupId);
         loadGroups();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     async function setSuper(userId, groupId, isSupervisor) {
@@ -1429,23 +1532,25 @@
           method: 'PUT', headers: jsonHeaders(),
           body: JSON.stringify({ groupId: groupId, isSupervisor: !!isSupervisor }),
         });
-        if (!res.ok) { const d = await res.json(); alert(d.error || '設定失敗'); return; }
+        if (!res.ok) { const d = await res.json(); toast(d.error || '設定失敗', 'error'); return; }
         loadGroupMembers(groupId);
         loadGroups();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     async function removeMember(userId, groupId) {
-      if (!confirm('確定要將此成員移出群組？')) return;
+      const ok = await confirmDialog('確定要將此成員移出群組？', { title: '移除成員', okText: '移除', danger: true });
+      if (!ok) return;
       try {
         const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
           method: 'PUT', headers: jsonHeaders(),
           body: JSON.stringify({ groupId: null, isSupervisor: false }),
         });
-        if (!res.ok) { const d = await res.json(); alert(d.error || '移除失敗'); return; }
+        if (!res.ok) { const d = await res.json(); toast(d.error || '移除失敗', 'error'); return; }
+        toast('已移除', 'success');
         loadGroupMembers(groupId);
         loadGroups();
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     // ====== 回報狀態面板 ======
