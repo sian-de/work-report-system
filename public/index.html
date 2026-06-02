@@ -1509,8 +1509,8 @@
         }
         authToken = data.token;
         localStorage.setItem('authToken', authToken);
-        currentUser = { displayName: data.displayName, role: data.role };
-        showMainApp();
+        // 透過 /api/me 取得完整身分（含 isSupervisor），避免主管登入後被誤判踢回前台
+        await checkAuth();
       } catch (e) {
         errEl.textContent = '網路錯誤，請重試';
         errEl.classList.add('show');
