@@ -635,7 +635,6 @@
       <div class="tabs" id="admin-tabs">
         <button class="tab-btn active" data-tab="reports" onclick="switchTab('reports')">📊 回報紀錄</button>
         <button class="tab-btn" data-tab="users" onclick="switchTab('users')">👥 人員管理</button>
-        <button class="tab-btn" data-tab="types" onclick="switchTab('types')" id="tab-btn-types" style="display:none">🏷️ 類型管理</button>
         <button class="tab-btn" data-tab="groups" onclick="switchTab('groups')" id="tab-btn-groups" style="display:none">🏢 分組管理</button>
         <button class="tab-btn" data-tab="status" onclick="switchTab('status')" id="tab-btn-status" style="display:none">📊 回報狀態</button>
       </div>
@@ -691,23 +690,6 @@
         <div class="user-cards" id="user-cards"></div>
       </div>
 
-      <!-- 類型管理頁籤 -->
-      <div class="tab-content" id="tab-types">
-        <div class="mgmt-header">
-          <h2>事項類型管理</h2>
-          <button class="btn-add" onclick="toggleAddTypeForm()">+ 新增類型</button>
-        </div>
-        <div class="add-form" id="add-type-form">
-          <div class="add-form-row">
-            <input type="text" id="new-type-emoji" placeholder="Emoji" style="width:70px;text-align:center;font-size:20px" maxlength="4" />
-            <input type="text" id="new-type-name" placeholder="類型名稱" style="flex:1" />
-            <button class="btn btn-primary" onclick="addTaskType()">新增</button>
-            <button class="btn btn-secondary" onclick="toggleAddTypeForm()">取消</button>
-          </div>
-        </div>
-        <div id="type-list"></div>
-      </div>
-
       <!-- 分組管理頁籤 -->
       <div class="tab-content" id="tab-groups">
         <div class="mgmt-header">
@@ -743,18 +725,20 @@
       <div class="modal-title">編輯回報紀錄</div>
       <input type="hidden" id="edit-id" />
       <div class="modal-field">
-        <label>事項類型</label>
-        <select id="edit-type">
+        <label>回報類型</label>
+        <select id="edit-type" onchange="toggleEditFields()">
           <!-- 動態載入 -->
         </select>
       </div>
-      <div class="modal-field">
-        <label>地點</label>
-        <input type="text" id="edit-location" />
-      </div>
-      <div class="modal-field">
-        <label>處理內容</label>
-        <textarea id="edit-task"></textarea>
+      <div id="edit-detail-fields">
+        <div class="modal-field">
+          <label>地點</label>
+          <input type="text" id="edit-location" />
+        </div>
+        <div class="modal-field">
+          <label>處理內容</label>
+          <textarea id="edit-task"></textarea>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
@@ -814,15 +798,14 @@
       document.getElementById('today-date').textContent = formatDate(new Date());
       document.getElementById('filter-date').value = formatDate(new Date());
 
-      // 管理員才顯示類型管理和分組管理頁籤
+      // 管理員才顯示分組管理頁籤
       if (isAdmin) {
-        document.getElementById('tab-btn-types').style.display = '';
         document.getElementById('tab-btn-groups').style.display = '';
       }
       // 管理員和主管都能看回報狀態
       document.getElementById('tab-btn-status').style.display = '';
 
-      loadTaskTypesForAdmin();
+      initTypeEmojiMap();
       loadSummary();
       loadReports();
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
@@ -848,7 +831,6 @@
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('tab-' + tab).classList.add('active');
       if (tab === 'users') loadUsers();
-      if (tab === 'types') loadAllTaskTypes();
       if (tab === 'groups') loadGroups();
       if (tab === 'status') loadStatusBoard();
     }
@@ -946,18 +928,19 @@
       });
     }
 
-    // ====== 載入事項類型（前端用） ======
-    async function loadTaskTypesForAdmin() {
-      try {
-        const res = await fetch('/api/task-types', { headers: authHeaders() });
-        if (!res.ok) return;
-        const types = await res.json();
-        typeEmojiMap = {};
-        types.forEach(t => { typeEmojiMap[t.name] = t.emoji || '📌'; });
-        // 更新編輯彈窗選項
-        const sel = document.getElementById('edit-type');
-        sel.innerHTML = types.map(t => `<option value="${escHtml(t.name)}">${t.emoji || '📌'} ${escHtml(t.name)}</option>`).join('');
-      } catch (e) {}
+    // ====== 回報類型（固定 4 種，與前台 report.html 一致）======
+    const REPORT_TYPES = [
+      { name: '到達', emoji: '📍' },
+      { name: '離開', emoji: '🚗' },
+      { name: '隨車(上車)', emoji: '🚌' },
+      { name: '隨車(下車)', emoji: '🚏' },
+    ];
+    function initTypeEmojiMap() {
+      typeEmojiMap = {};
+      REPORT_TYPES.forEach(t => { typeEmojiMap[t.name] = t.emoji; });
+      // 更新編輯彈窗選項
+      const sel = document.getElementById('edit-type');
+      sel.innerHTML = REPORT_TYPES.map(t => `<option value="${escHtml(t.name)}">${t.emoji} ${escHtml(t.name)}</option>`).join('');
     }
 
     // ====== 回報紀錄 ======
@@ -1203,14 +1186,28 @@
     // ====== 編輯回報 ======
     function openEditModal(data) {
       document.getElementById('edit-id').value = data.id;
-      document.getElementById('edit-type').value = data.task_type;
+      const sel = document.getElementById('edit-type');
+      // 若是舊資料的非標準類型，臨時補一個選項，避免顯示錯誤或被誤改
+      if (data.task_type && !REPORT_TYPES.some(t => t.name === data.task_type)) {
+        sel.insertAdjacentHTML('beforeend', `<option value="${escHtml(data.task_type)}">${escHtml(data.task_type)}</option>`);
+      }
+      sel.value = data.task_type;
       document.getElementById('edit-location').value = data.location;
       document.getElementById('edit-task').value = data.task_description;
+      toggleEditFields();
       document.getElementById('edit-modal').classList.add('show');
+    }
+
+    // 「離開」類型不需要地點/處理內容
+    function toggleEditFields() {
+      const isLeave = document.getElementById('edit-type').value === '離開';
+      document.getElementById('edit-detail-fields').style.display = isLeave ? 'none' : '';
     }
 
     function closeEditModal() {
       document.getElementById('edit-modal').classList.remove('show');
+      // 還原編輯彈窗選項，移除臨時補上的舊類型
+      initTypeEmojiMap();
     }
 
     async function saveEdit() {
@@ -1218,7 +1215,8 @@
       const taskType = document.getElementById('edit-type').value;
       const location = document.getElementById('edit-location').value.trim();
       const task = document.getElementById('edit-task').value.trim();
-      if (!location || !task) { toast('地點和處理內容不能為空', 'error'); return; }
+      // 「離開」不需要地點/處理內容，其餘類型必填
+      if (taskType !== '離開' && (!location || !task)) { toast('地點和處理內容不能為空', 'error'); return; }
 
       const btn = document.getElementById('edit-save-btn');
       btn.disabled = true; btn.textContent = '儲存中...';
@@ -1248,120 +1246,6 @@
     document.getElementById('edit-modal').addEventListener('click', (e) => {
       if (e.target === document.getElementById('edit-modal')) closeEditModal();
     });
-
-    // ====== 類型管理 ======
-    function toggleAddTypeForm() {
-      document.getElementById('add-type-form').classList.toggle('show');
-      document.getElementById('new-type-emoji').value = '📌';
-      document.getElementById('new-type-name').value = '';
-    }
-
-    async function loadAllTaskTypes() {
-      try {
-        const res = await fetch('/api/task-types/all', { headers: authHeaders() });
-        if (!res.ok) return;
-        const types = await res.json();
-        const list = document.getElementById('type-list');
-
-        if (types.length === 0) {
-          list.innerHTML = '<div class="empty-state"><div class="icon">🏷️</div><p>尚無事項類型</p></div>';
-          return;
-        }
-
-        list.innerHTML = types.map((t, i) => `
-          <div class="type-item" data-id="${t.id}">
-            <span class="type-emoji">${t.emoji || '📌'}</span>
-            <span class="type-name">${escHtml(t.name)}</span>
-            <span class="type-order">#${t.sort_order}</span>
-            <span class="type-status ${t.is_active ? 'type-active' : 'type-inactive'}">${t.is_active ? '啟用' : '停用'}</span>
-            <div class="type-actions">
-              <button class="btn-move" onclick="moveType(${t.id}, 'up')" ${i === 0 ? 'disabled style="opacity:0.3"' : ''}>▲</button>
-              <button class="btn-move" onclick="moveType(${t.id}, 'down')" ${i === types.length - 1 ? 'disabled style="opacity:0.3"' : ''}>▼</button>
-              <button class="btn-toggle" onclick="toggleType(${t.id}, ${t.is_active ? 0 : 1})">${t.is_active ? '停用' : '啟用'}</button>
-              <button class="btn-edit" onclick="editTypeName(${t.id}, '${escAttr(t.name)}', '${escAttr(t.emoji)}')">編輯</button>
-              <button class="btn-del-report" onclick="deleteType(${t.id}, '${escAttr(t.name)}')">刪除</button>
-            </div>
-          </div>
-        `).join('');
-      } catch (e) {}
-    }
-
-    async function addTaskType() {
-      const emoji = document.getElementById('new-type-emoji').value.trim() || '📌';
-      const name = document.getElementById('new-type-name').value.trim();
-      if (!name) { toast('請輸入類型名稱', 'error'); return; }
-      try {
-        const res = await fetch('/api/task-types', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name, emoji }) });
-        const data = await res.json();
-        if (!res.ok) { toast(data.error || '新增失敗', 'error'); return; }
-        toast('已新增類型', 'success');
-        toggleAddTypeForm();
-        loadAllTaskTypes();
-        loadTaskTypesForAdmin();
-      } catch (e) { toast('網路錯誤', 'error'); }
-    }
-
-    async function toggleType(id, newActive) {
-      try {
-        const res = await fetch('/api/task-types/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ is_active: newActive }) });
-        if (!res.ok) { const d = await res.json(); toast(d.error || '修改失敗', 'error'); return; }
-        loadAllTaskTypes();
-        loadTaskTypesForAdmin();
-      } catch (e) { toast('網路錯誤', 'error'); }
-    }
-
-    async function moveType(id, direction) {
-      // 取得所有類型重新排序
-      try {
-        const res = await fetch('/api/task-types/all', { headers: authHeaders() });
-        if (!res.ok) return;
-        const types = await res.json();
-        const idx = types.findIndex(t => t.id === id);
-        if (idx < 0) return;
-        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-        if (swapIdx < 0 || swapIdx >= types.length) return;
-
-        // 交換 sort_order
-        const orderA = types[idx].sort_order;
-        const orderB = types[swapIdx].sort_order;
-        await Promise.all([
-          fetch('/api/task-types/' + types[idx].id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ sort_order: orderB }) }),
-          fetch('/api/task-types/' + types[swapIdx].id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ sort_order: orderA }) }),
-        ]);
-        loadAllTaskTypes();
-        loadTaskTypesForAdmin();
-      } catch (e) { toast('網路錯誤', 'error'); }
-    }
-
-    async function editTypeName(id, currentName, currentEmoji) {
-      const newName = await promptDialog({ title: '修改類型名稱', defaultValue: currentName, placeholder: '類型名稱' });
-      if (newName === null || newName.trim() === '' || newName.trim() === currentName) return;
-      const newEmoji = await promptDialog({ title: '修改 Emoji', defaultValue: currentEmoji, placeholder: 'Emoji' });
-      try {
-        const res = await fetch('/api/task-types/' + id, {
-          method: 'PUT', headers: jsonHeaders(),
-          body: JSON.stringify({ name: newName.trim(), emoji: (newEmoji && newEmoji.trim()) || currentEmoji }),
-        });
-        const d = await res.json();
-        if (!res.ok) { toast(d.error || '修改失敗', 'error'); return; }
-        toast('已更新', 'success');
-        loadAllTaskTypes();
-        loadTaskTypesForAdmin();
-      } catch (e) { toast('網路錯誤', 'error'); }
-    }
-
-    async function deleteType(id, name) {
-      const ok = await confirmDialog(`確定要刪除類型「${name}」嗎？`, { title: '刪除類型', okText: '刪除', danger: true });
-      if (!ok) return;
-      try {
-        const res = await fetch('/api/task-types/' + id, { method: 'DELETE', headers: authHeaders() });
-        const data = await res.json();
-        if (!res.ok) { toast(data.error || '刪除失敗', 'error'); return; }
-        toast('已刪除', 'success');
-        loadAllTaskTypes();
-        loadTaskTypesForAdmin();
-      } catch (e) { toast('網路錯誤', 'error'); }
-    }
 
     // ====== 分組管理 ======
     function toggleAddGroupForm() {
