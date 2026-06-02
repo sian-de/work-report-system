@@ -345,22 +345,12 @@
     .btn-add { background: linear-gradient(135deg, #06c755, #04a847); color: white; border: none; border-radius: 10px; padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
     .btn-add:hover { opacity: 0.9; }
 
-    .type-item, .group-card {
+    .group-card {
       background: white; border-radius: 12px; padding: 16px 20px; margin-bottom: 10px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 12px;
       transition: box-shadow 0.2s;
     }
-    .type-item:hover, .group-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
-    .type-emoji { font-size: 24px; width: 36px; text-align: center; }
-    .type-name { flex: 1; font-weight: 600; font-size: 15px; color: #333; }
-    .type-order { font-size: 12px; color: #999; min-width: 50px; text-align: center; }
-    .type-status { font-size: 12px; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
-    .type-active { background: #e8f5e9; color: #2e7d32; }
-    .type-inactive { background: #fce4ec; color: #c62828; }
-    .type-actions { display: flex; gap: 6px; }
-    .type-actions button { border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-weight: 500; }
-    .btn-toggle { background: #fff3e0; color: #e65100; }
-    .btn-move { background: #f0f0f0; color: #555; font-size: 14px; padding: 4px 8px; }
+    .group-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
 
     .group-info { flex: 1; }
     .group-name { font-weight: 700; font-size: 16px; color: #333; }
@@ -513,11 +503,7 @@
       .pagination { flex-wrap: wrap; }
       .pagination button { padding: 8px 12px; font-size: 13px; }
 
-      /* 類型管理 */
-      .type-item { flex-wrap: wrap; padding: 14px 16px; gap: 8px; }
-      .type-actions { width: 100%; justify-content: flex-end; gap: 4px; }
-      .type-actions button { padding: 6px 10px; font-size: 11px; }
-      .type-name { font-size: 14px; }
+      /* 管理頁標題 */
       .mgmt-header { flex-direction: column; gap: 10px; align-items: stretch; }
       .mgmt-header h2 { font-size: 16px; }
 
@@ -571,8 +557,7 @@
       .user-card-controls label { color: #999; }
       .user-card-controls select { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
       .user-card-actions { border-color: #1a3a5c; }
-      .type-item, .group-card { background: #16213e; box-shadow: 0 2px 8px rgba(0,0,0,0.3); color: #e0e0e0; }
-      .type-name { color: #e0e0e0; }
+      .group-card { background: #16213e; box-shadow: 0 2px 8px rgba(0,0,0,0.3); color: #e0e0e0; }
       .group-name { color: #e0e0e0; }
       .member-row { border-color: #1a3a5c; }
       .modal-box { background: #16213e; color: #e0e0e0; }
