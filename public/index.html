@@ -1514,7 +1514,7 @@
                 <div class="group-meta">👥 ${g.member_count || 0} 位成員${g.supervisor_name ? '　👤 主管：' + escHtml(g.supervisor_name) : ''}</div>
               </div>
               <div class="group-actions" onclick="event.stopPropagation()">
-                <button class="btn-edit" onclick="editGroupName(${g.id}, '${escAttr(g.name)}')">編輯</button>
+                <button class="btn-edit" onclick="editGroup(${g.id}, '${escAttr(g.name)}', ${g.company_id != null ? g.company_id : 'null'})">編輯</button>
                 <button class="btn-del-report" onclick="deleteGroup(${g.id}, '${escAttr(g.name)}')">刪除</button>
               </div>
             </div>
@@ -1619,16 +1619,49 @@
       } catch (e) { toast('網路錯誤', 'error'); }
     }
 
-    async function editGroupName(id, currentName) {
-      const newName = await promptDialog({ title: '修改群組名稱', defaultValue: currentName, placeholder: '群組名稱' });
-      if (newName === null || newName.trim() === '' || newName.trim() === currentName) return;
-      try {
-        const res = await fetch('/api/groups/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ name: newName.trim() }) });
-        const d = await res.json();
-        if (!res.ok) { toast(d.error || '修改失敗', 'error'); return; }
-        toast('已更新', 'success');
-        loadGroups();
-      } catch (e) { toast('網路錯誤', 'error'); }
+    // 編輯群組：可改名稱 + 指定所屬公司（指定後成員公司一併對齊）
+    async function editGroup(id, currentName, currentCompanyId) {
+      await loadCompanyOptions();
+      if (allCompanies.length === 0) { toast('尚無公司，請先到「公司管理」新增', 'error'); return; }
+      const curCid = currentCompanyId != null ? String(currentCompanyId) : '';
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay show';
+      overlay.innerHTML = `
+        <div class="modal-box" style="max-width:420px">
+          <div class="modal-title">編輯群組</div>
+          <div class="modal-field">
+            <label>群組名稱</label>
+            <input type="text" class="eg-name" value="${escAttr(currentName)}" />
+          </div>
+          <div class="modal-field">
+            <label>所屬公司</label>
+            <select class="eg-company">
+              ${allCompanies.map(c => `<option value="${c.id}" ${String(c.id) === curCid ? 'selected' : ''}>${escHtml(c.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary eg-cancel">取消</button>
+            <button class="btn btn-primary eg-save">儲存</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const close = () => overlay.remove();
+      overlay.querySelector('.eg-cancel').onclick = close;
+      overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+      overlay.querySelector('.eg-save').onclick = async () => {
+        const name = overlay.querySelector('.eg-name').value.trim();
+        const companyId = overlay.querySelector('.eg-company').value;
+        if (!name) { toast('請輸入群組名稱', 'error'); return; }
+        if (!companyId) { toast('請選擇所屬公司', 'error'); return; }
+        try {
+          const res = await fetch('/api/groups/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ name, companyId: Number(companyId) }) });
+          const d = await res.json();
+          if (!res.ok) { toast(d.error || '修改失敗', 'error'); return; }
+          toast('已更新', 'success');
+          close();
+          loadGroups();
+        } catch (e) { toast('網路錯誤', 'error'); }
+      };
     }
 
     async function deleteGroup(id, name) {
