@@ -201,8 +201,20 @@ setInterval(() => {
 }, 60000);
 
 // ====== 靜態檔案（含快取標頭）======
-app.use('/admin', express.static(path.join(__dirname, 'public'), { maxAge: '1h', etag: true }));
-app.use('/report.html', express.static(path.join(__dirname, 'public', 'report.html'), { maxAge: '10m', etag: true }));
+const PUBLIC_DIR = path.join(__dirname, 'public');
+function staticCacheHeaders(res, filePath) {
+  // HTML 與 service worker：一律 no-cache（向伺服器以 ETag 驗證），部署後連線即拿到新版
+  if (/\.html$/i.test(filePath) || filePath.endsWith('sw.js')) {
+    res.setHeader('Cache-Control', 'no-cache');
+  } else {
+    // 其他靜態資源（manifest/圖示等）：可短期快取
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+  }
+}
+// 後台：/admin → index.html（含 /admin/track.html）
+app.use('/admin', express.static(PUBLIC_DIR, { etag: true, setHeaders: staticCacheHeaders }));
+// 根目錄資源：/sw.js、/manifest.json、/report.html、/track.html 等（index:false 讓 '/' 交給下方 redirect）
+app.use(express.static(PUBLIC_DIR, { etag: true, index: false, setHeaders: staticCacheHeaders }));
 
 // ====== 健康檢查（供 UptimeRobot 保活）======
 app.get('/api/health', (req, res) => {
