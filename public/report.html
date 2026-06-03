@@ -8,7 +8,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <title>工作動態回報</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -803,6 +806,63 @@
       .type-stat-row { border-color: #1a3a5c; color: #ccc; }
       .type-stat-bar { background: #1a3a5c; }
     }
+
+    /* ====== 同事位置：控制鈕 / 統計 / 名單面板 ====== */
+    .map-controls { position: absolute; top: 10px; right: 10px; z-index: 400; display: flex; gap: 6px; }
+    .map-ctrl-btn {
+      background: #06c755; color: white; border: none; border-radius: 8px;
+      padding: 8px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    .map-ctrl-btn:active { transform: scale(0.96); }
+
+    .team-stats {
+      position: absolute; top: 10px; left: 10px; z-index: 400;
+      background: rgba(255,255,255,0.95); border-radius: 8px; padding: 6px 12px;
+      font-size: 12px; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      display: flex; gap: 12px; align-items: center;
+    }
+    .team-stats .ts-on { color: #06c755; }
+    .team-stats .ts-off { color: #9e9e9e; }
+    .team-stats .ts-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+
+    .team-list-sheet {
+      position: absolute; left: 0; right: 0; bottom: 0; z-index: 450;
+      background: white; border-radius: 16px 16px 0 0;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
+      max-height: 55%; display: flex; flex-direction: column;
+      transform: translateY(100%); transition: transform 0.28s ease;
+    }
+    .team-list-sheet.open { transform: translateY(0); }
+    .tls-handle { width: 44px; height: 5px; background: #ccc; border-radius: 3px; margin: 10px auto 6px; cursor: pointer; flex-shrink: 0; }
+    .tls-search {
+      margin: 0 14px 10px; padding: 10px 14px; border: 2px solid #e8e8e8;
+      border-radius: 10px; font-size: 16px; flex-shrink: 0;
+    }
+    .tls-search:focus { outline: none; border-color: #06c755; }
+    .tls-list { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 8px 14px; }
+    .tls-row {
+      display: flex; align-items: center; gap: 10px; padding: 10px 8px;
+      border-bottom: 1px solid #f0f0f0; cursor: pointer;
+    }
+    .tls-row:active { background: #f5f5f5; }
+    .tls-avatar { width: 34px; height: 34px; border-radius: 50%; color: white; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .tls-info { flex: 1; min-width: 0; }
+    .tls-name { font-weight: 600; font-size: 14px; }
+    .tls-meta { font-size: 12px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tls-status { font-size: 11px; font-weight: 600; flex-shrink: 0; }
+    .tls-status.on { color: #06c755; }
+    .tls-status.off { color: #9e9e9e; }
+
+    @media (prefers-color-scheme: dark) {
+      .team-stats { background: rgba(22,33,62,0.95); color: #e0e0e0; }
+      .team-list-sheet { background: #16213e; }
+      .tls-search { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
+      .tls-row { border-color: #1a3a5c; }
+      .tls-row:active { background: #0f3460; }
+      .tls-name { color: #e0e0e0; }
+      .tls-handle { background: #44506b; }
+    }
   </style>
 </head>
 <body>
@@ -1082,8 +1142,17 @@
       <div class="sub">查看同事最後回報的位置</div>
     </div>
     <div style="padding:0;position:relative">
-      <div id="team-map" style="height:calc(100vh - 140px);width:100%;z-index:1"></div>
-      <button onclick="loadTeamMap()" style="position:absolute;top:10px;right:10px;z-index:400;background:#06c755;color:white;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2)">🔄 重新整理</button>
+      <div id="team-map" style="height:calc(100dvh - 140px);width:100%;z-index:1"></div>
+      <div class="map-controls">
+        <button class="map-ctrl-btn" onclick="toggleTeamList()">👥 名單</button>
+        <button class="map-ctrl-btn" onclick="loadTeamMap(true)">🔄</button>
+      </div>
+      <div id="team-stats" class="team-stats"></div>
+      <div id="team-list-sheet" class="team-list-sheet">
+        <div class="tls-handle" onclick="toggleTeamList()"></div>
+        <input id="team-search" class="tls-search" placeholder="🔍 搜尋同事姓名..." oninput="renderTeamList()" />
+        <div id="team-list" class="tls-list"></div>
+      </div>
     </div>
     <div class="bottom-nav">
       <button class="nav-item" onclick="switchTab('form')"><span class="nav-icon">📝</span>回報</button>
@@ -1548,12 +1617,14 @@
 
     // ====== 底部導航切換 ======
     function switchTab(tab) {
+      if (tab !== 'map') stopTeamAutoRefresh();
       if (tab === 'form') {
         showScreen('form-screen');
         updateDateTime();
       } else if (tab === 'map') {
         showScreen('map-screen');
-        loadTeamMap();
+        loadTeamMap(true);
+        startTeamAutoRefresh();
       } else if (tab === 'records') {
         showScreen('records-screen');
         document.getElementById('records-user-label').textContent = currentUser.displayName;
@@ -1565,7 +1636,19 @@
 
     // ====== 同事位置地圖 ======
     let teamMap = null;
-    let teamMarkers = [];
+    let teamClusterGroup = null;
+    let teamMarkersById = {};
+    let teamData = [];
+    let teamFitted = false;
+    let teamRefreshTimer = null;
+
+    function startTeamAutoRefresh() {
+      if (teamRefreshTimer) clearInterval(teamRefreshTimer);
+      teamRefreshTimer = setInterval(() => loadTeamMap(false), 60000); // 每 60 秒，保留視角
+    }
+    function stopTeamAutoRefresh() {
+      if (teamRefreshTimer) { clearInterval(teamRefreshTimer); teamRefreshTimer = null; }
+    }
 
     function timeAgo(dateStr, timeStr) {
       if (!dateStr) return '未知';
@@ -1610,16 +1693,22 @@
       });
     }
 
-    async function loadTeamMap() {
+    async function loadTeamMap(fit) {
       if (!teamMap) {
         teamMap = L.map('team-map').setView([25.033, 121.565], 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '&copy; OpenStreetMap',
           maxZoom: 18,
         }).addTo(teamMap);
+        teamClusterGroup = L.markerClusterGroup({
+          maxClusterRadius: 45,
+          spiderfyOnMaxZoom: true,
+          showCoverageOnHover: false,
+        });
+        teamMap.addLayer(teamClusterGroup);
       }
-      teamMarkers.forEach(m => teamMap.removeLayer(m));
-      teamMarkers = [];
+      teamClusterGroup.clearLayers();
+      teamMarkersById = {};
 
       try {
         const res = await fetch('/api/last-locations', {
@@ -1628,7 +1717,14 @@
         if (!res.ok) return;
         const rawData = await res.json();
 
-        if (rawData.length === 0) return;
+        teamData = rawData;
+        renderTeamList();
+
+        if (rawData.length === 0) {
+          document.getElementById('team-stats').innerHTML = '<span>目前沒有同事位置資料</span>';
+          setTimeout(() => teamMap.invalidateSize(), 200);
+          return;
+        }
 
         const data = offsetOverlap(rawData);
         const bounds = [];
@@ -1657,7 +1753,7 @@
             iconAnchor: [18, 18],
           });
 
-          const marker = L.marker([lat, lng], { icon, zIndexOffset: isMe ? 1000 : 0 }).addTo(teamMap);
+          const marker = L.marker([lat, lng], { icon, zIndexOffset: isMe ? 1000 : 0 });
           marker.bindPopup(`
             <div style="font-family:-apple-system,sans-serif;min-width:170px">
               <div style="font-weight:700;font-size:15px;margin-bottom:6px;color:${bgColor}">${escHtml(p.display_name || '未知')}${isMe ? ' (我)' : ''}</div>
@@ -1667,16 +1763,83 @@
               <div style="font-size:12px;color:${stale ? '#9e9e9e' : '#ff9800'};font-weight:600">⏱️ ${ago}${stale ? '（已超過 2 小時）' : ''}</div>
             </div>
           `);
-          teamMarkers.push(marker);
+          teamClusterGroup.addLayer(marker);
+          teamMarkersById[p.user_id] = marker;
         });
 
-        if (bounds.length > 0) {
+        // 只在首次或手動重新整理時框選全體；自動更新保留使用者目前視角
+        if ((fit || !teamFitted) && bounds.length > 0) {
           teamMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
+          teamFitted = true;
         }
 
         setTimeout(() => teamMap.invalidateSize(), 200);
       } catch (e) {
         console.error('載入同事位置失敗:', e);
+      }
+    }
+
+    // 名單面板：開關
+    function toggleTeamList() {
+      const sheet = document.getElementById('team-list-sheet');
+      sheet.classList.toggle('open');
+      if (sheet.classList.contains('open')) {
+        renderTeamList();
+        setTimeout(() => { const s = document.getElementById('team-search'); if (s) s.focus(); }, 200);
+      }
+    }
+
+    // 名單 + 搜尋 + 在線/離線統計
+    function renderTeamList() {
+      const stats = document.getElementById('team-stats');
+      const listEl = document.getElementById('team-list');
+      if (!stats || !listEl) return;
+
+      const online = teamData.filter(p => !isStale(p.report_date, p.report_time)).length;
+      const offline = teamData.length - online;
+      stats.innerHTML = `<span class="ts-on"><span class="ts-dot" style="background:#06c755"></span>在線 ${online}</span><span class="ts-off"><span class="ts-dot" style="background:#9e9e9e"></span>離線 ${offline}</span>`;
+
+      const q = (document.getElementById('team-search') ? document.getElementById('team-search').value : '').trim().toLowerCase();
+      const rows = teamData
+        .filter(p => !q || (p.display_name || '').toLowerCase().includes(q))
+        .sort((a, b) => {
+          const sa = isStale(a.report_date, a.report_time), sb = isStale(b.report_date, b.report_time);
+          if (sa !== sb) return sa ? 1 : -1; // 在線優先
+          return (a.display_name || '').localeCompare(b.display_name || '', 'zh-Hant');
+        });
+
+      if (rows.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;color:#999;padding:20px;font-size:14px">查無同事</div>';
+        return;
+      }
+
+      listEl.innerHTML = rows.map(p => {
+        const isMe = currentUser && p.user_id === currentUser.userId;
+        const stale = isStale(p.report_date, p.report_time);
+        const bg = stale ? '#9e9e9e' : (isMe ? '#4a90d9' : '#06c755');
+        const ago = timeAgo(p.report_date, p.report_time);
+        return `
+          <div class="tls-row" onclick="locateColleague('${escAttr(p.user_id)}')">
+            <div class="tls-avatar" style="background:${bg}">${escHtml((p.display_name || '?')[0])}</div>
+            <div class="tls-info">
+              <div class="tls-name">${escHtml(p.display_name || '未知')}${isMe ? ' (我)' : ''}</div>
+              <div class="tls-meta">${escHtml(p.task_type || '')}　${escHtml(p.location || '')}</div>
+            </div>
+            <div class="tls-status ${stale ? 'off' : 'on'}">${ago}</div>
+          </div>`;
+      }).join('');
+    }
+
+    // 點名單 → 定位到該同事
+    function locateColleague(userId) {
+      const marker = teamMarkersById[userId];
+      if (!marker || !teamMap) return;
+      document.getElementById('team-list-sheet').classList.remove('open');
+      if (teamClusterGroup && teamClusterGroup.zoomToShowLayer) {
+        teamClusterGroup.zoomToShowLayer(marker, () => { teamMap.setView(marker.getLatLng(), Math.max(teamMap.getZoom(), 16)); marker.openPopup(); });
+      } else {
+        teamMap.setView(marker.getLatLng(), 16);
+        marker.openPopup();
       }
     }
 
