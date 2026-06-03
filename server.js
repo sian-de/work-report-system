@@ -33,7 +33,7 @@ app.use(express.json());
 // 登入/註冊/忘記密碼速率限制（每 IP 15 分鐘內最多 15 次）
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 15,
+  max: process.env.NODE_ENV === 'test' ? 100000 : 15, // 測試環境放寬，避免限流影響自動化測試
   message: { error: '嘗試次數過多，請 15 分鐘後再試' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -1155,10 +1155,9 @@ app.use((err, req, res, next) => {
 // ====== 啟動伺服器 ======
 let server;
 
-async function startServer() {
+// 初始化資料（建表 + 預設管理員）— 供正式啟動與測試共用
+async function initData() {
   await initDB();
-
-  // 自動建立預設管理員帳號（如果不存在）
   const adminResult = await db.execute({ sql: 'SELECT user_id FROM users WHERE role = ?', args: ['admin'] });
   if (adminResult.rows.length === 0) {
     const pwHash = await hashPassword('admin123');
@@ -1168,7 +1167,10 @@ async function startServer() {
     });
     console.log('已建立預設管理員帳號: admin / admin123');
   }
+}
 
+async function startServer() {
+  await initData();
   const PORT = process.env.PORT || 3000;
   server = app.listen(PORT, () => {
     console.log(`伺服器啟動於 http://localhost:${PORT}`);
@@ -1192,10 +1194,14 @@ function gracefulShutdown(signal) {
   }
 }
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+// 僅在「直接執行」時啟動伺服器；被 require（測試）時只匯出 app
+if (require.main === module) {
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  startServer().catch(err => {
+    console.error('啟動失敗:', err);
+    process.exit(1);
+  });
+}
 
-startServer().catch(err => {
-  console.error('啟動失敗:', err);
-  process.exit(1);
-});
+module.exports = { app, initData, startServer, db };
