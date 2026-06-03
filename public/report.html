@@ -128,11 +128,17 @@
     .gps-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
     .gps-icon { font-size: 20px; }
     .gps-title { font-size: 14px; font-weight: 600; color: #333; }
+    .gps-refresh { margin-left: auto; background: #06c755; color: #fff; border: none; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; -webkit-appearance: none; }
+    .gps-refresh:active { transform: scale(0.97); }
+    .gps-refresh:disabled { opacity: 0.5; }
     .gps-status { font-size: 13px; padding: 8px 12px; border-radius: 8px; text-align: center; }
     .gps-loading { background: #fff8e1; color: #f57f17; }
     .gps-success { background: #e8f5e9; color: #2e7d32; }
     .gps-error { background: #fce4ec; color: #c62828; }
     .gps-coords { font-size: 12px; color: #999; margin-top: 6px; text-align: center; }
+    .gps-map { height: 190px; border-radius: 10px; margin-top: 10px; display: none; z-index: 1; }
+    .gps-map.show { display: block; }
+    .gps-hint { font-size: 12px; color: #888; margin-top: 8px; text-align: center; line-height: 1.5; }
 
     .input-group {
       background: white;
@@ -783,6 +789,7 @@
       .gps-success { background: #002a00; color: #4caf50; }
       .gps-error { background: #2a0000; color: #ef5350; }
       .gps-coords { color: #777; }
+      .gps-hint { color: #888; }
       .tab-switch-bar { background: #0f3460; }
       .tab-sw { color: #888; }
       .tab-sw.active { background: #16213e; color: #e0e0e0; }
@@ -1007,9 +1014,12 @@
         <div class="gps-header">
           <span class="gps-icon">🛰️</span>
           <span class="gps-title">GPS 定位</span>
+          <button type="button" class="gps-refresh" id="gps-refresh-btn" onclick="getGPS()">🔄 重新定位</button>
         </div>
         <div class="gps-status gps-loading" id="gps-status">正在取得定位中...</div>
         <div class="gps-coords" id="gps-coords"></div>
+        <div id="gps-map" class="gps-map"></div>
+        <div class="gps-hint" id="gps-hint">送出前請先確認地圖上的位置是否正確；若不準或過舊，請點「🔄 重新定位」。</div>
       </div>
 
       <div class="input-group">
@@ -1247,6 +1257,7 @@
 
   <script>
     let gpsLat = null, gpsLng = null, selectedType = '';
+    let gpsMap = null, gpsMarker = null, gpsCircle = null;
     let authToken = localStorage.getItem('authToken') || '';
     let currentUser = null;
 
@@ -1491,31 +1502,58 @@
     // ====== 事項類型（已改為到達/離開） ======
 
     // ====== GPS ======
+    function renderGpsMap(lat, lng, accuracy) {
+      const mapEl = document.getElementById('gps-map');
+      mapEl.classList.add('show');
+      if (!gpsMap) {
+        gpsMap = L.map('gps-map', { zoomControl: true, attributionControl: false }).setView([lat, lng], 17);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(gpsMap);
+      } else {
+        gpsMap.setView([lat, lng], 17);
+      }
+      if (gpsMarker) gpsMarker.setLatLng([lat, lng]);
+      else gpsMarker = L.marker([lat, lng], { draggable: false }).addTo(gpsMap).bindPopup('我目前的位置');
+      if (gpsCircle) gpsCircle.setLatLng([lat, lng]).setRadius(accuracy || 0);
+      else gpsCircle = L.circle([lat, lng], { radius: accuracy || 0, color: '#06c755', weight: 1, fillColor: '#06c755', fillOpacity: 0.12 }).addTo(gpsMap);
+      setTimeout(() => gpsMap.invalidateSize(), 200);
+    }
+
     function getGPS() {
       const statusEl = document.getElementById('gps-status');
       const coordsEl = document.getElementById('gps-coords');
+      const btn = document.getElementById('gps-refresh-btn');
       statusEl.textContent = '正在取得定位中...';
       statusEl.className = 'gps-status gps-loading';
       coordsEl.textContent = '';
       gpsLat = null; gpsLng = null;
+      if (btn) { btn.disabled = true; }
 
       if (!navigator.geolocation) {
         statusEl.textContent = '此裝置不支援 GPS 定位';
         statusEl.className = 'gps-status gps-error';
+        if (btn) btn.disabled = false;
         return;
       }
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           gpsLat = pos.coords.latitude;
           gpsLng = pos.coords.longitude;
-          statusEl.textContent = '✅ GPS 定位成功';
-          statusEl.className = 'gps-status gps-success';
-          coordsEl.textContent = `${gpsLat.toFixed(6)}, ${gpsLng.toFixed(6)}`;
+          const acc = Math.round(pos.coords.accuracy || 0);
+          const lowAcc = acc > 100;
+          statusEl.textContent = lowAcc ? `✅ 定位成功（精度較低 ±${acc}m）` : `✅ 定位成功（精度 ±${acc}m）`;
+          statusEl.className = 'gps-status ' + (lowAcc ? 'gps-loading' : 'gps-success');
+          coordsEl.textContent = `${gpsLat.toFixed(6)}, ${gpsLng.toFixed(6)}　｜　剛剛定位`;
+          document.getElementById('gps-hint').textContent = lowAcc
+            ? '定位精度較低，建議移到空曠處後再點「🔄 重新定位」。'
+            : '請確認地圖上的位置是否正確；若不準或過舊，點「🔄 重新定位」。';
+          renderGpsMap(gpsLat, gpsLng, pos.coords.accuracy);
+          if (btn) btn.disabled = false;
         },
         () => {
           statusEl.textContent = '⚠️ 無法取得 GPS（不影響回報）';
           statusEl.className = 'gps-status gps-error';
           coordsEl.textContent = '將不會記錄 GPS 座標';
+          if (btn) btn.disabled = false;
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
