@@ -339,6 +339,21 @@
     .role-user { background: #e8f5e9; color: #2e7d32; }
     .role-supervisor { background: #e3f2fd; color: #1565c0; }
 
+    /* 人員管理工具列 */
+    .user-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+    .user-toolbar #user-search {
+      flex: 1; min-width: 160px; padding: 10px 14px; border: 2px solid #e8e8e8;
+      border-radius: 10px; font-size: 14px;
+    }
+    .user-toolbar #user-search:focus { outline: none; border-color: #06c755; }
+    .user-role-tabs { display: flex; gap: 4px; background: white; border-radius: 10px; padding: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .urt-btn { border: none; background: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; color: #888; cursor: pointer; white-space: nowrap; }
+    .urt-btn.active { background: #06c755; color: white; }
+    .urt-btn:hover:not(.active) { background: #f0f0f0; }
+
+    .user-card-edit-btn { margin-left: auto; background: #4a90d9; color: white; border: none; border-radius: 8px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
+    .user-editor { padding-top: 12px; margin-top: 10px; border-top: 1px solid #f0f2f5; }
+
     /* 主管管轄公司複選 */
     .supcomp-box { margin: 4px 0 10px; padding: 10px 12px; background: #f8f9fa; border-radius: 10px; }
     .supcomp-label { font-size: 12px; font-weight: 600; color: #1565c0; margin-bottom: 8px; }
@@ -358,6 +373,14 @@
       transition: box-shadow 0.2s;
     }
     .group-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+
+    /* 公司分區標題 */
+    .company-section { margin-bottom: 18px; }
+    .company-section-title {
+      font-size: 14px; font-weight: 700; color: #04a847;
+      padding: 6px 4px; margin-bottom: 8px; border-bottom: 2px solid #e8f5e9;
+      position: sticky; top: 60px; background: #f0f2f5; z-index: 5;
+    }
 
     .group-info { flex: 1; }
     .group-name { font-weight: 700; font-size: 16px; color: #333; }
@@ -588,6 +611,11 @@
       .dialog-text { color: #bbb; }
       .supcomp-box { background: #0f3460; }
       .supcomp-chk { background: #16213e; border-color: #1a3a5c; color: #e0e0e0; }
+      .user-toolbar #user-search { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
+      .user-role-tabs { background: #16213e; }
+      .urt-btn:hover:not(.active) { background: #0f3460; }
+      .company-section-title { background: #1a1a2e; color: #06c755; border-bottom-color: #0f3460; }
+      .user-editor { border-top-color: #1a3a5c; }
     }
   </style>
 </head>
@@ -682,6 +710,15 @@
 
       <!-- 人員管理頁籤 -->
       <div class="tab-content" id="tab-users">
+        <div class="user-toolbar">
+          <input type="text" id="user-search" placeholder="🔍 搜尋姓名 / 帳號..." oninput="renderUsers()" />
+          <div class="user-role-tabs" id="user-role-tabs">
+            <button class="urt-btn active" data-role="all" onclick="setUserRoleFilter('all')">全部</button>
+            <button class="urt-btn" data-role="admin" onclick="setUserRoleFilter('admin')">管理員</button>
+            <button class="urt-btn" data-role="supervisor" onclick="setUserRoleFilter('supervisor')">主管</button>
+            <button class="urt-btn" data-role="user" onclick="setUserRoleFilter('user')">稽查員</button>
+          </div>
+        </div>
         <div class="user-cards" id="user-cards"></div>
       </div>
 
@@ -709,6 +746,7 @@
         </div>
         <div class="add-form" id="add-group-form">
           <div class="add-form-row">
+            <select id="new-group-company" style="min-width:140px"></select>
             <input type="text" id="new-group-name" placeholder="群組名稱" style="flex:1" />
             <button class="btn btn-primary" onclick="addGroup()">新增</button>
             <button class="btn btn-secondary" onclick="toggleAddGroupForm()">取消</button>
@@ -1071,6 +1109,9 @@
     // ====== 人員管理 ======
     let allGroups = [];
     let allCompanies = [];
+    let allUsersData = [];
+    let userRoleFilter = 'all';
+    let expandedUserId = null;
 
     async function loadGroupOptions() {
       try {
@@ -1086,104 +1127,168 @@
       } catch (e) {}
     }
 
+    function setUserRoleFilter(role) {
+      userRoleFilter = role;
+      document.querySelectorAll('#user-role-tabs .urt-btn').forEach(b => b.classList.toggle('active', b.dataset.role === role));
+      renderUsers();
+    }
+
     async function loadUsers() {
       await Promise.all([loadGroupOptions(), loadCompanyOptions()]);
       try {
         const res = await fetch('/api/users', { headers: authHeaders() });
         if (!res.ok) return;
-        const users = await res.json();
-        const container = document.getElementById('user-cards');
-        const isAdmin = currentUser && currentUser.role === 'admin';
+        allUsersData = await res.json();
+        renderUsers();
+      } catch (e) {}
+    }
 
-        const groupOpts = allGroups.map(g => `<option value="${g.id}">${escHtml(g.name)}</option>`).join('');
-        const companyOpts = allCompanies.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+    function groupOptionsFor(companyId) {
+      const cid = companyId != null ? String(companyId) : '';
+      return allGroups
+        .filter(g => cid && String(g.company_id) === cid)
+        .map(g => `<option value="${g.id}">${escHtml(g.name)}</option>`).join('');
+    }
 
-        container.innerHTML = users.map(u => {
-          let roleBadge = '', avatarClass = 'user-bg';
-          if (u.role === 'admin') {
-            roleBadge = '<span class="role-badge role-admin">管理員</span>';
-            avatarClass = 'admin-bg';
-          } else if (u.is_supervisor) {
-            roleBadge = '<span class="role-badge role-supervisor">主管</span>';
-            avatarClass = 'supervisor-bg';
-          } else {
-            roleBadge = '<span class="role-badge role-user">稽查員</span>';
-          }
+    function renderUsers() {
+      const isAdmin = currentUser && currentUser.role === 'admin';
+      const q = ((document.getElementById('user-search') || {}).value || '').trim().toLowerCase();
+      const companyOpts = allCompanies.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
 
-          const isAdminUser = u.user_id === 'admin';
-          const canEdit = isAdmin && !isAdminUser;
-          const currentRole = u.role === 'admin' ? 'admin' : (u.is_supervisor ? 'supervisor' : 'user');
-          const uid = escAttr(u.user_id);
-          const supIds = u.supervisor_company_ids || [];
+      const filtered = allUsersData.filter(u => {
+        const role = u.role === 'admin' ? 'admin' : (u.is_supervisor ? 'supervisor' : 'user');
+        if (userRoleFilter !== 'all' && userRoleFilter !== role) return false;
+        if (q && !(u.display_name || '').toLowerCase().includes(q) && !(u.user_id || '').toLowerCase().includes(q)) return false;
+        return true;
+      });
 
-          const controlsHtml = canEdit ? `
+      const container = document.getElementById('user-cards');
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="icon">👥</div><p>沒有符合的人員</p></div>';
+        return;
+      }
+
+      // 依公司分區
+      const byCompany = {};
+      filtered.forEach(u => { const key = u.company_name || '（未指定公司）'; (byCompany[key] = byCompany[key] || []).push(u); });
+
+      const cardHtml = u => {
+        let roleBadge = '', avatarClass = 'user-bg';
+        if (u.role === 'admin') { roleBadge = '<span class="role-badge role-admin">管理員</span>'; avatarClass = 'admin-bg'; }
+        else if (u.is_supervisor) { roleBadge = '<span class="role-badge role-supervisor">主管</span>'; avatarClass = 'supervisor-bg'; }
+        else { roleBadge = '<span class="role-badge role-user">稽查員</span>'; }
+
+        const isAdminUser = u.user_id === 'admin';
+        const canEdit = isAdmin && !isAdminUser;
+        const currentRole = u.role === 'admin' ? 'admin' : (u.is_supervisor ? 'supervisor' : 'user');
+        const uid = escAttr(u.user_id);
+        const supIds = u.supervisor_company_ids || [];
+        const expanded = expandedUserId === u.user_id;
+
+        const metaParts = [escHtml(u.user_id)];
+        if (u.group_name) metaParts.push('📁 ' + escHtml(u.group_name));
+        if (currentRole === 'supervisor' && supIds.length) {
+          const names = allCompanies.filter(c => supIds.includes(c.id)).map(c => c.name);
+          if (names.length) metaParts.push('👁 管轄：' + escHtml(names.join('、')));
+        }
+
+        const editorHtml = (expanded && canEdit) ? `
+          <div class="user-editor">
             <div class="user-card-controls">
-              <label>分組</label>
-              <select onchange="updateUserGroupRole('${uid}')" id="group-sel-${uid}">
-                <option value="">未分組</option>
-                ${groupOpts}
-              </select>
               <label>所屬公司</label>
-              <select onchange="updateUserGroupRole('${uid}')" id="company-sel-${uid}">
+              <select id="company-sel-${uid}" onchange="onEditorCompanyChange('${uid}')">
                 <option value="">未指定</option>
                 ${companyOpts}
               </select>
+              <label>群組</label>
+              <select id="group-sel-${uid}">
+                <option value="">未分組</option>
+                ${groupOptionsFor(u.company_id)}
+              </select>
               <label>權限</label>
-              <select onchange="updateUserGroupRole('${uid}')" id="role-sel-${uid}">
+              <select id="role-sel-${uid}" onchange="onEditorRoleChange('${uid}')">
                 <option value="user" ${currentRole === 'user' ? 'selected' : ''}>稽查員</option>
                 <option value="supervisor" ${currentRole === 'supervisor' ? 'selected' : ''}>主管</option>
               </select>
             </div>
-            ${currentRole === 'supervisor' ? `
-            <div class="supcomp-box">
-              <div class="supcomp-label">管轄公司（可複選）</div>
-              <div class="supcomp-list" id="supcomp-list-${uid}">
-                ${allCompanies.length === 0 ? '<span style="color:#999;font-size:12px">尚無公司，請先到「公司管理」新增</span>' :
-                  allCompanies.map(c => `<label class="supcomp-chk"><input type="checkbox" value="${c.id}" onchange="updateUserGroupRole('${uid}')" ${supIds.includes(c.id) ? 'checked' : ''}> ${escHtml(c.name)}</label>`).join('')}
-              </div>
-            </div>` : ''}` : '';
-
-          const actionsHtml = canEdit ? `
-            <div class="user-card-actions">
-              <button style="background:#fff3e0;color:#e65100" onclick="resetPassword('${uid}', '${escAttr(u.display_name)}')">🔑 重設密碼</button>
-              <button style="background:#fce4ec;color:#c62828" onclick="deleteUser('${uid}', '${escAttr(u.display_name)}')">🗑️ 刪除</button>
-            </div>` : '';
-
-          const metaParts = [escHtml(u.user_id)];
-          if (u.company_name) metaParts.push('🏢 ' + escHtml(u.company_name));
-          if (u.group_name) metaParts.push('📁 ' + escHtml(u.group_name));
-
-          return `
-            <div class="user-card" id="ucard-${uid}">
-              <div class="user-card-top">
-                <div class="user-avatar ${avatarClass}">${(u.display_name || '?')[0]}</div>
-                <div class="user-card-info">
-                  <div class="user-card-name">${escHtml(u.display_name)} ${roleBadge}</div>
-                  <div class="user-card-id">${metaParts.join('　')}</div>
+            <div id="supcomp-wrap-${uid}" style="${currentRole === 'supervisor' ? '' : 'display:none'}">
+              <div class="supcomp-box">
+                <div class="supcomp-label">管轄公司（可複選）</div>
+                <div class="supcomp-list" id="supcomp-list-${uid}">
+                  ${allCompanies.length === 0 ? '<span style="color:#999;font-size:12px">尚無公司，請先到「公司管理」新增</span>' :
+                    allCompanies.map(c => `<label class="supcomp-chk"><input type="checkbox" value="${c.id}" ${supIds.includes(c.id) ? 'checked' : ''}> ${escHtml(c.name)}</label>`).join('')}
                 </div>
               </div>
-              ${controlsHtml}
-              ${actionsHtml}
-            </div>`;
-        }).join('');
+            </div>
+            <div class="user-card-actions">
+              <button class="btn btn-primary" style="padding:8px 16px" onclick="saveUser('${uid}')">儲存</button>
+              <button style="background:#f0f0f0;color:#555" onclick="toggleUserEditor('${uid}')">取消</button>
+              <button style="background:#fff3e0;color:#e65100" onclick="resetPassword('${uid}', '${escAttr(u.display_name)}')">🔑 重設密碼</button>
+              <button style="background:#fce4ec;color:#c62828" onclick="deleteUser('${uid}', '${escAttr(u.display_name)}')">🗑️ 刪除</button>
+            </div>
+          </div>` : '';
 
-        // 設定下拉選單的值
-        users.forEach(u => {
-          const gsel = document.getElementById('group-sel-' + u.user_id);
-          if (gsel) gsel.value = u.group_id && u.group_id !== 'web' ? u.group_id : '';
-          const csel = document.getElementById('company-sel-' + u.user_id);
+        return `
+          <div class="user-card" id="ucard-${uid}">
+            <div class="user-card-top">
+              <div class="user-avatar ${avatarClass}">${(u.display_name || '?')[0]}</div>
+              <div class="user-card-info">
+                <div class="user-card-name">${escHtml(u.display_name)} ${roleBadge}</div>
+                <div class="user-card-id">${metaParts.join('　')}</div>
+              </div>
+              ${canEdit ? `<button class="user-card-edit-btn" onclick="toggleUserEditor('${uid}')">${expanded ? '收合' : '編輯'}</button>` : ''}
+            </div>
+            ${editorHtml}
+          </div>`;
+      };
+
+      container.innerHTML = Object.entries(byCompany).map(([company, us]) => `
+        <div class="company-section">
+          <div class="company-section-title">🏬 ${escHtml(company)}（${us.length}）</div>
+          <div class="user-cards">${us.map(cardHtml).join('')}</div>
+        </div>
+      `).join('');
+
+      // 設定展開中編輯器的下拉值
+      if (expandedUserId) {
+        const u = allUsersData.find(x => x.user_id === expandedUserId);
+        if (u) {
+          const csel = document.getElementById('company-sel-' + expandedUserId);
           if (csel) csel.value = u.company_id != null ? String(u.company_id) : '';
-        });
-      } catch (e) {}
+          const gsel = document.getElementById('group-sel-' + expandedUserId);
+          if (gsel) gsel.value = u.group_id && u.group_id !== 'web' ? u.group_id : '';
+        }
+      }
     }
 
-    // 一次送出分組、所屬公司、權限、主管管轄公司
-    async function updateUserGroupRole(userId) {
-      const groupSel = document.getElementById('group-sel-' + userId);
-      const companySel = document.getElementById('company-sel-' + userId);
+    function toggleUserEditor(userId) {
+      expandedUserId = (expandedUserId === userId) ? null : userId;
+      renderUsers();
+    }
+
+    // 所屬公司變更 → 群組選單只列該公司的群組
+    function onEditorCompanyChange(userId) {
+      const csel = document.getElementById('company-sel-' + userId);
+      const gsel = document.getElementById('group-sel-' + userId);
+      if (gsel) {
+        gsel.innerHTML = '<option value="">未分組</option>' + groupOptionsFor(csel ? csel.value : '');
+        gsel.value = '';
+      }
+    }
+
+    // 權限變更 → 顯示/隱藏管轄公司
+    function onEditorRoleChange(userId) {
       const roleSel = document.getElementById('role-sel-' + userId);
-      const groupId = groupSel ? groupSel.value : '';
+      const wrap = document.getElementById('supcomp-wrap-' + userId);
+      if (wrap) wrap.style.display = (roleSel && roleSel.value === 'supervisor') ? '' : 'none';
+    }
+
+    async function saveUser(userId) {
+      const companySel = document.getElementById('company-sel-' + userId);
+      const groupSel = document.getElementById('group-sel-' + userId);
+      const roleSel = document.getElementById('role-sel-' + userId);
       const companyId = companySel ? companySel.value : '';
+      const groupId = groupSel ? groupSel.value : '';
       const isSupervisor = roleSel && roleSel.value === 'supervisor' ? 1 : 0;
 
       const supervisorCompanyIds = [];
@@ -1197,6 +1302,7 @@
         });
         if (!res.ok) { const d = await res.json(); toast(d.error || '設定失敗', 'error'); return; }
         toast('已更新', 'success');
+        expandedUserId = null;
         loadUsers();
       } catch (e) { toast('網路錯誤', 'error'); }
     }
@@ -1362,24 +1468,45 @@
     }
 
     // ====== 分組管理 ======
-    function toggleAddGroupForm() {
-      document.getElementById('add-group-form').classList.toggle('show');
+    let groupCompanyMap = {}; // groupId -> company_id
+
+    async function toggleAddGroupForm() {
+      const form = document.getElementById('add-group-form');
+      form.classList.toggle('show');
       document.getElementById('new-group-name').value = '';
+      if (form.classList.contains('show')) {
+        await loadCompanyOptions();
+        const sel = document.getElementById('new-group-company');
+        sel.innerHTML = allCompanies.length === 0
+          ? '<option value="">請先到公司管理新增公司</option>'
+          : allCompanies.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+      }
     }
 
     async function loadGroups() {
       try {
+        await loadCompanyOptions();
         const res = await fetch('/api/groups', { headers: authHeaders() });
         if (!res.ok) return;
         const groups = await res.json();
         const list = document.getElementById('group-list');
+
+        groupCompanyMap = {};
+        groups.forEach(g => { groupCompanyMap[g.id] = g.company_id; });
 
         if (groups.length === 0) {
           list.innerHTML = '<div class="empty-state"><div class="icon">🏢</div><p>尚無群組，點擊上方按鈕新增</p></div>';
           return;
         }
 
-        list.innerHTML = groups.map(g => `
+        // 依公司分區
+        const byCompany = {};
+        groups.forEach(g => {
+          const key = g.company_name || '（未指定公司）';
+          (byCompany[key] = byCompany[key] || []).push(g);
+        });
+
+        const groupCardHtml = g => `
           <div>
             <div class="group-card" onclick="toggleGroupMembers(${g.id})" style="cursor:pointer">
               <div class="group-info">
@@ -1392,6 +1519,12 @@
               </div>
             </div>
             <div class="group-members" id="group-members-${g.id}" style="display:none"></div>
+          </div>`;
+
+        list.innerHTML = Object.entries(byCompany).map(([company, gs]) => `
+          <div class="company-section">
+            <div class="company-section-title">🏬 ${escHtml(company)}</div>
+            ${gs.map(groupCardHtml).join('')}
           </div>
         `).join('');
 
@@ -1422,9 +1555,11 @@
       const el = document.getElementById('group-members-' + groupId);
       el.innerHTML = '載入中...';
       try {
+        const cid = groupCompanyMap[groupId];
+        const unassignedUrl = '/api/users/unassigned' + (cid ? '?companyId=' + cid : '');
         const [membersRes, unassignedRes] = await Promise.all([
           fetch('/api/groups/' + groupId + '/members', { headers: authHeaders() }),
-          fetch('/api/users/unassigned', { headers: authHeaders() }),
+          fetch(unassignedUrl, { headers: authHeaders() }),
         ]);
         const members = await membersRes.json();
         const unassigned = await unassignedRes.json();
@@ -1443,7 +1578,7 @@
               <div class="member-actions">
                 <button style="background:${m.is_supervisor ? '#fce4ec' : '#e3f2fd'};color:${m.is_supervisor ? '#c62828' : '#1565c0'}"
                   onclick="setSuper('${escAttr(m.user_id)}', ${groupId}, ${m.is_supervisor ? 0 : 1})">
-                  ${m.is_supervisor ? '取消主管' : '設為主管'}
+                  ${m.is_supervisor ? '取消本公司主管' : '設為本公司主管'}
                 </button>
                 <button style="background:#fce4ec;color:#c62828" onclick="removeMember('${escAttr(m.user_id)}', ${groupId})">移除</button>
               </div>
@@ -1471,9 +1606,11 @@
 
     async function addGroup() {
       const name = document.getElementById('new-group-name').value.trim();
+      const companyId = document.getElementById('new-group-company').value;
       if (!name) { toast('請輸入群組名稱', 'error'); return; }
+      if (!companyId) { toast('請選擇所屬公司', 'error'); return; }
       try {
-        const res = await fetch('/api/groups', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name }) });
+        const res = await fetch('/api/groups', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name, companyId: Number(companyId) }) });
         const data = await res.json();
         if (!res.ok) { toast(data.error || '新增失敗', 'error'); return; }
         toast('已新增群組', 'success');
@@ -1524,13 +1661,17 @@
       } catch (e) { toast('網路錯誤', 'error'); }
     }
 
-    async function setSuper(userId, groupId, isSupervisor) {
+    // 在該群組所屬公司，設定/取消此人為主管（公司感知，可累加多間公司）
+    async function setSuper(userId, groupId, enabled) {
+      const companyId = groupCompanyMap[groupId];
+      if (!companyId) { toast('此群組尚未指定公司', 'error'); return; }
       try {
-        const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
+        const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/supervisor-company', {
           method: 'PUT', headers: jsonHeaders(),
-          body: JSON.stringify({ groupId: groupId, isSupervisor: !!isSupervisor }),
+          body: JSON.stringify({ companyId: Number(companyId), enabled: !!enabled }),
         });
         if (!res.ok) { const d = await res.json(); toast(d.error || '設定失敗', 'error'); return; }
+        toast(enabled ? '已設為本公司主管' : '已取消本公司主管', 'success');
         loadGroupMembers(groupId);
         loadGroups();
       } catch (e) { toast('網路錯誤', 'error'); }

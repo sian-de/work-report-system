@@ -67,15 +67,20 @@ async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_supcomp_user ON supervisor_companies(user_id);
   `);
 
-  // users 加上 company_id 欄位（所屬公司，用於回報歸屬）。
-  // 既有資料表用 ALTER 補欄位；欄位已存在則忽略錯誤。
-  try {
-    await db.execute('ALTER TABLE users ADD COLUMN company_id INTEGER');
-  } catch (e) {
-    if (!/duplicate column/i.test(e.message || '')) {
-      console.error('新增 users.company_id 欄位時發生非預期錯誤:', e.message);
+  // 以 ALTER 補欄位（相容既有資料表）；欄位已存在則忽略錯誤。
+  const addColumn = async (sql, label) => {
+    try {
+      await db.execute(sql);
+    } catch (e) {
+      if (!/duplicate column/i.test(e.message || '')) {
+        console.error(`新增 ${label} 欄位時發生非預期錯誤:`, e.message);
+      }
     }
-  }
+  };
+  // users.company_id：人員所屬公司（回報歸屬）
+  await addColumn('ALTER TABLE users ADD COLUMN company_id INTEGER', 'users.company_id');
+  // groups.company_id：群組歸屬的公司（公司 > 群組 > 人員 階層）
+  await addColumn('ALTER TABLE groups ADD COLUMN company_id INTEGER', 'groups.company_id');
 
   // 預設事項類型種子資料
   const typeCount = await db.execute({ sql: 'SELECT COUNT(*) as c FROM task_types', args: [] });

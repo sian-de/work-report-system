@@ -64,7 +64,7 @@ work-report-system/
 - **users**：user_id, display_name, group_id, is_supervisor, company_id, password_hash, role, created_at
 - **reports**：id, user_id, display_name, group_id, report_date, report_time, task_type, location, task_description, gps_latitude, gps_longitude, created_at
 - **task_types**：id, name, emoji, sort_order, is_active（後台類型管理已移除，前台類型固定）
-- **groups**：id, name, created_at
+- **groups**：id, name, company_id, created_at（群組歸屬一間公司）
 - **companies**：id, name(UNIQUE), created_at
 - **supervisor_companies**：user_id, company_id（主管↔公司 多對多，PK 複合）
 
