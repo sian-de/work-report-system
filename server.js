@@ -404,17 +404,35 @@ app.post('/api/groups', requireAdmin, async (req, res) => {
   }
 });
 
-// 修改群組名稱
+// 修改群組（名稱／所屬公司）
 app.put('/api/groups/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const { name } = req.body;
-  if (!name || !name.trim()) return res.status(400).json({ error: '群組名稱不能為空' });
+  const { name, companyId } = req.body;
 
   try {
     const existing = await db.execute({ sql: 'SELECT * FROM groups WHERE id = ?', args: [Number(id)] });
     if (existing.rows.length === 0) return res.status(404).json({ error: '找不到此群組' });
 
-    await db.execute({ sql: 'UPDATE groups SET name = ? WHERE id = ?', args: [name.trim(), Number(id)] });
+    const updates = [];
+    const args = [];
+    if (name !== undefined) {
+      if (!name.trim()) return res.status(400).json({ error: '群組名稱不能為空' });
+      updates.push('name = ?'); args.push(name.trim());
+    }
+    if (companyId !== undefined) {
+      updates.push('company_id = ?'); args.push(companyId ? Number(companyId) : null);
+    }
+    if (updates.length === 0) return res.status(400).json({ error: '沒有要修改的欄位' });
+
+    args.push(Number(id));
+    await db.execute({ sql: `UPDATE groups SET ${updates.join(', ')} WHERE id = ?`, args });
+
+    // 指定公司時，將該群組現有成員的所屬公司一併對齊（維持公司>群組>人員一致）
+    if (companyId !== undefined && companyId) {
+      await db.execute({ sql: 'UPDATE users SET company_id = ? WHERE group_id = ?', args: [Number(companyId), String(id)] });
+    }
+
+    apiCache.clear();
     res.json({ success: true });
   } catch (err) {
     if (err.message?.includes('UNIQUE')) return res.status(400).json({ error: '此群組名稱已存在' });
