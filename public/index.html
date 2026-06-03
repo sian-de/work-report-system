@@ -339,6 +339,13 @@
     .role-user { background: #e8f5e9; color: #2e7d32; }
     .role-supervisor { background: #e3f2fd; color: #1565c0; }
 
+    /* 主管管轄公司複選 */
+    .supcomp-box { margin: 4px 0 10px; padding: 10px 12px; background: #f8f9fa; border-radius: 10px; }
+    .supcomp-label { font-size: 12px; font-weight: 600; color: #1565c0; margin-bottom: 8px; }
+    .supcomp-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .supcomp-chk { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+    .supcomp-chk input { width: 15px; height: 15px; cursor: pointer; }
+
     /* 類型管理 & 分組管理 */
     .mgmt-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
     .mgmt-header h2 { font-size: 18px; color: #333; }
@@ -579,6 +586,8 @@
       .mgmt-header h2 { color: #e0e0e0; }
       .assign-bar select { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
       .dialog-text { color: #bbb; }
+      .supcomp-box { background: #0f3460; }
+      .supcomp-chk { background: #16213e; border-color: #1a3a5c; color: #e0e0e0; }
     }
   </style>
 </head>
@@ -620,6 +629,7 @@
       <div class="tabs" id="admin-tabs">
         <button class="tab-btn active" data-tab="reports" onclick="switchTab('reports')">📊 回報紀錄</button>
         <button class="tab-btn" data-tab="users" onclick="switchTab('users')">👥 人員管理</button>
+        <button class="tab-btn" data-tab="companies" onclick="switchTab('companies')" id="tab-btn-companies" style="display:none">🏬 公司管理</button>
         <button class="tab-btn" data-tab="groups" onclick="switchTab('groups')" id="tab-btn-groups" style="display:none">🏢 分組管理</button>
         <button class="tab-btn" data-tab="status" onclick="switchTab('status')" id="tab-btn-status" style="display:none">📊 回報狀態</button>
       </div>
@@ -673,6 +683,22 @@
       <!-- 人員管理頁籤 -->
       <div class="tab-content" id="tab-users">
         <div class="user-cards" id="user-cards"></div>
+      </div>
+
+      <!-- 公司管理頁籤 -->
+      <div class="tab-content" id="tab-companies">
+        <div class="mgmt-header">
+          <h2>公司管理</h2>
+          <button class="btn-add" onclick="toggleAddCompanyForm()">+ 新增公司</button>
+        </div>
+        <div class="add-form" id="add-company-form">
+          <div class="add-form-row">
+            <input type="text" id="new-company-name" placeholder="公司名稱" style="flex:1" />
+            <button class="btn btn-primary" onclick="addCompany()">新增</button>
+            <button class="btn btn-secondary" onclick="toggleAddCompanyForm()">取消</button>
+          </div>
+        </div>
+        <div id="company-list"></div>
       </div>
 
       <!-- 分組管理頁籤 -->
@@ -783,8 +809,9 @@
       document.getElementById('today-date').textContent = formatDate(new Date());
       document.getElementById('filter-date').value = formatDate(new Date());
 
-      // 管理員才顯示分組管理頁籤
+      // 管理員才顯示公司管理、分組管理頁籤
       if (isAdmin) {
+        document.getElementById('tab-btn-companies').style.display = '';
         document.getElementById('tab-btn-groups').style.display = '';
       }
       // 管理員和主管都能看回報狀態
@@ -816,6 +843,7 @@
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('tab-' + tab).classList.add('active');
       if (tab === 'users') loadUsers();
+      if (tab === 'companies') loadCompanies();
       if (tab === 'groups') loadGroups();
       if (tab === 'status') loadStatusBoard();
     }
@@ -1042,6 +1070,7 @@
 
     // ====== 人員管理 ======
     let allGroups = [];
+    let allCompanies = [];
 
     async function loadGroupOptions() {
       try {
@@ -1050,8 +1079,15 @@
       } catch (e) {}
     }
 
+    async function loadCompanyOptions() {
+      try {
+        const res = await fetch('/api/companies', { headers: authHeaders() });
+        if (res.ok) allCompanies = await res.json();
+      } catch (e) {}
+    }
+
     async function loadUsers() {
-      await loadGroupOptions();
+      await Promise.all([loadGroupOptions(), loadCompanyOptions()]);
       try {
         const res = await fetch('/api/users', { headers: authHeaders() });
         if (!res.ok) return;
@@ -1060,6 +1096,7 @@
         const isAdmin = currentUser && currentUser.role === 'admin';
 
         const groupOpts = allGroups.map(g => `<option value="${g.id}">${escHtml(g.name)}</option>`).join('');
+        const companyOpts = allCompanies.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
 
         container.innerHTML = users.map(u => {
           let roleBadge = '', avatarClass = 'user-bg';
@@ -1070,41 +1107,59 @@
             roleBadge = '<span class="role-badge role-supervisor">主管</span>';
             avatarClass = 'supervisor-bg';
           } else {
-            roleBadge = '<span class="role-badge role-user">一般</span>';
+            roleBadge = '<span class="role-badge role-user">稽查員</span>';
           }
 
           const isAdminUser = u.user_id === 'admin';
           const canEdit = isAdmin && !isAdminUser;
-          const currentGroupId = u.group_id && u.group_id !== 'web' ? u.group_id : '';
           const currentRole = u.role === 'admin' ? 'admin' : (u.is_supervisor ? 'supervisor' : 'user');
+          const uid = escAttr(u.user_id);
+          const supIds = u.supervisor_company_ids || [];
 
           const controlsHtml = canEdit ? `
             <div class="user-card-controls">
               <label>分組</label>
-              <select onchange="updateUserGroupRole('${escAttr(u.user_id)}')" id="group-sel-${escAttr(u.user_id)}">
+              <select onchange="updateUserGroupRole('${uid}')" id="group-sel-${uid}">
                 <option value="">未分組</option>
                 ${groupOpts}
               </select>
+              <label>所屬公司</label>
+              <select onchange="updateUserGroupRole('${uid}')" id="company-sel-${uid}">
+                <option value="">未指定</option>
+                ${companyOpts}
+              </select>
               <label>權限</label>
-              <select onchange="updateUserGroupRole('${escAttr(u.user_id)}')" id="role-sel-${escAttr(u.user_id)}">
-                <option value="user" ${currentRole === 'user' ? 'selected' : ''}>一般職員</option>
+              <select onchange="updateUserGroupRole('${uid}')" id="role-sel-${uid}">
+                <option value="user" ${currentRole === 'user' ? 'selected' : ''}>稽查員</option>
                 <option value="supervisor" ${currentRole === 'supervisor' ? 'selected' : ''}>主管</option>
               </select>
-            </div>` : '';
+            </div>
+            ${currentRole === 'supervisor' ? `
+            <div class="supcomp-box">
+              <div class="supcomp-label">管轄公司（可複選）</div>
+              <div class="supcomp-list" id="supcomp-list-${uid}">
+                ${allCompanies.length === 0 ? '<span style="color:#999;font-size:12px">尚無公司，請先到「公司管理」新增</span>' :
+                  allCompanies.map(c => `<label class="supcomp-chk"><input type="checkbox" value="${c.id}" onchange="updateUserGroupRole('${uid}')" ${supIds.includes(c.id) ? 'checked' : ''}> ${escHtml(c.name)}</label>`).join('')}
+              </div>
+            </div>` : ''}` : '';
 
           const actionsHtml = canEdit ? `
             <div class="user-card-actions">
-              <button style="background:#fff3e0;color:#e65100" onclick="resetPassword('${escAttr(u.user_id)}', '${escAttr(u.display_name)}')">🔑 重設密碼</button>
-              <button style="background:#fce4ec;color:#c62828" onclick="deleteUser('${escAttr(u.user_id)}', '${escAttr(u.display_name)}')">🗑️ 刪除</button>
+              <button style="background:#fff3e0;color:#e65100" onclick="resetPassword('${uid}', '${escAttr(u.display_name)}')">🔑 重設密碼</button>
+              <button style="background:#fce4ec;color:#c62828" onclick="deleteUser('${uid}', '${escAttr(u.display_name)}')">🗑️ 刪除</button>
             </div>` : '';
 
+          const metaParts = [escHtml(u.user_id)];
+          if (u.company_name) metaParts.push('🏢 ' + escHtml(u.company_name));
+          if (u.group_name) metaParts.push('📁 ' + escHtml(u.group_name));
+
           return `
-            <div class="user-card" id="ucard-${escAttr(u.user_id)}">
+            <div class="user-card" id="ucard-${uid}">
               <div class="user-card-top">
                 <div class="user-avatar ${avatarClass}">${(u.display_name || '?')[0]}</div>
                 <div class="user-card-info">
                   <div class="user-card-name">${escHtml(u.display_name)} ${roleBadge}</div>
-                  <div class="user-card-id">${escHtml(u.user_id)}${u.group_name ? '　📁 ' + escHtml(u.group_name) : ''}</div>
+                  <div class="user-card-id">${metaParts.join('　')}</div>
                 </div>
               </div>
               ${controlsHtml}
@@ -1112,27 +1167,33 @@
             </div>`;
         }).join('');
 
-        // 設定分組下拉選單的值
+        // 設定下拉選單的值
         users.forEach(u => {
-          const sel = document.getElementById('group-sel-' + u.user_id);
-          if (sel) {
-            const gid = u.group_id && u.group_id !== 'web' ? u.group_id : '';
-            sel.value = gid;
-          }
+          const gsel = document.getElementById('group-sel-' + u.user_id);
+          if (gsel) gsel.value = u.group_id && u.group_id !== 'web' ? u.group_id : '';
+          const csel = document.getElementById('company-sel-' + u.user_id);
+          if (csel) csel.value = u.company_id != null ? String(u.company_id) : '';
         });
       } catch (e) {}
     }
 
-    // 同時讀取分組與權限兩個下拉選單，一次送出，避免任一欄位被覆蓋為 null
+    // 一次送出分組、所屬公司、權限、主管管轄公司
     async function updateUserGroupRole(userId) {
       const groupSel = document.getElementById('group-sel-' + userId);
+      const companySel = document.getElementById('company-sel-' + userId);
       const roleSel = document.getElementById('role-sel-' + userId);
       const groupId = groupSel ? groupSel.value : '';
+      const companyId = companySel ? companySel.value : '';
       const isSupervisor = roleSel && roleSel.value === 'supervisor' ? 1 : 0;
+
+      const supervisorCompanyIds = [];
+      const wrap = document.getElementById('supcomp-list-' + userId);
+      if (wrap) wrap.querySelectorAll('input[type=checkbox]:checked').forEach(cb => supervisorCompanyIds.push(Number(cb.value)));
+
       try {
         const res = await fetch('/api/users/' + encodeURIComponent(userId) + '/group', {
           method: 'PUT', headers: jsonHeaders(),
-          body: JSON.stringify({ groupId: groupId || null, isSupervisor }),
+          body: JSON.stringify({ groupId: groupId || null, companyId: companyId || null, isSupervisor, supervisorCompanyIds }),
         });
         if (!res.ok) { const d = await res.json(); toast(d.error || '設定失敗', 'error'); return; }
         toast('已更新', 'success');
@@ -1231,6 +1292,74 @@
     document.getElementById('edit-modal').addEventListener('click', (e) => {
       if (e.target === document.getElementById('edit-modal')) closeEditModal();
     });
+
+    // ====== 公司管理 ======
+    function toggleAddCompanyForm() {
+      document.getElementById('add-company-form').classList.toggle('show');
+      document.getElementById('new-company-name').value = '';
+    }
+
+    async function loadCompanies() {
+      try {
+        const res = await fetch('/api/companies', { headers: authHeaders() });
+        if (!res.ok) return;
+        const companies = await res.json();
+        const list = document.getElementById('company-list');
+        if (companies.length === 0) {
+          list.innerHTML = '<div class="empty-state"><div class="icon">🏬</div><p>尚無公司，點擊上方按鈕新增</p></div>';
+          return;
+        }
+        list.innerHTML = companies.map(c => `
+          <div class="group-card">
+            <div class="group-info">
+              <div class="group-name">${escHtml(c.name)}</div>
+              <div class="group-meta">👥 ${c.member_count || 0} 位人員</div>
+            </div>
+            <div class="group-actions">
+              <button class="btn-edit" onclick="editCompanyName(${c.id}, '${escAttr(c.name)}')">編輯</button>
+              <button class="btn-del-report" onclick="deleteCompany(${c.id}, '${escAttr(c.name)}')">刪除</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {}
+    }
+
+    async function addCompany() {
+      const name = document.getElementById('new-company-name').value.trim();
+      if (!name) { toast('請輸入公司名稱', 'error'); return; }
+      try {
+        const res = await fetch('/api/companies', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name }) });
+        const data = await res.json();
+        if (!res.ok) { toast(data.error || '新增失敗', 'error'); return; }
+        toast('已新增公司', 'success');
+        toggleAddCompanyForm();
+        loadCompanies();
+      } catch (e) { toast('網路錯誤', 'error'); }
+    }
+
+    async function editCompanyName(id, currentName) {
+      const newName = await promptDialog({ title: '修改公司名稱', defaultValue: currentName, placeholder: '公司名稱' });
+      if (newName === null || newName.trim() === '' || newName.trim() === currentName) return;
+      try {
+        const res = await fetch('/api/companies/' + id, { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ name: newName.trim() }) });
+        const d = await res.json();
+        if (!res.ok) { toast(d.error || '修改失敗', 'error'); return; }
+        toast('已更新', 'success');
+        loadCompanies();
+      } catch (e) { toast('網路錯誤', 'error'); }
+    }
+
+    async function deleteCompany(id, name) {
+      const ok = await confirmDialog(`確定要刪除公司「${name}」嗎？\n（須先將該公司人員改至其他公司）`, { title: '刪除公司', okText: '刪除', danger: true });
+      if (!ok) return;
+      try {
+        const res = await fetch('/api/companies/' + id, { method: 'DELETE', headers: authHeaders() });
+        const data = await res.json();
+        if (!res.ok) { toast(data.error || '刪除失敗', 'error'); return; }
+        toast('已刪除', 'success');
+        loadCompanies();
+      } catch (e) { toast('網路錯誤', 'error'); }
+    }
 
     // ====== 分組管理 ======
     function toggleAddGroupForm() {

@@ -40,12 +40,17 @@ work-report-system/
     └── 技術文件-工作動態回報系統.html
 ```
 
-## 角色權限
+## 角色權限（公司資料隔離）
 | 角色 | 前台 | 後台 | 資料範圍 |
 |------|------|------|----------|
-| admin | ✅ | ✅ | 所有人 |
-| is_supervisor=1 | ✅ | ✅ | 所有人 |
-| 一般職員 | ✅ | ❌（導向前台）| 僅自己 |
+| admin | ✅ | ✅ 全功能 | 所有公司 |
+| is_supervisor=1（主管）| ✅ | ✅（限本公司）| 其管轄公司（`supervisor_companies` 多對多，可跨多間）|
+| 一般職員（稽查員）| ✅ | ❌（導向前台）| 僅自己 |
+
+- 主管「可檢視」的公司來自 `supervisor_companies`（一位主管可管多間公司）。
+- 人員「所屬」公司為 `users.company_id`（決定其回報歸屬哪間公司）。
+- 隔離一律於後端強制：reports / summary / status-board / users / trajectory / gps-users / last-locations / export 皆依範圍過濾；快取 key 含範圍避免跨公司外洩。
+- 同事位置地圖：稽查員看「所屬公司」同事；主管看「管轄公司」；點位最後回報超過 2 小時顯示灰色。
 
 ## 回報類型（4 種）
 | 類型 | 圖示 | 顏色 | 需填地點+內容 |
@@ -56,19 +61,24 @@ work-report-system/
 | 隨車(下車) | 🚏 | 紫 | ✅ |
 
 ## 資料庫結構
-- **users**：user_id, display_name, group_id, is_supervisor, password_hash, role, created_at
+- **users**：user_id, display_name, group_id, is_supervisor, company_id, password_hash, role, created_at
 - **reports**：id, user_id, display_name, group_id, report_date, report_time, task_type, location, task_description, gps_latitude, gps_longitude, created_at
-- **task_types**：id, name, emoji, sort_order, is_active
+- **task_types**：id, name, emoji, sort_order, is_active（後台類型管理已移除，前台類型固定）
 - **groups**：id, name, created_at
+- **companies**：id, name(UNIQUE), created_at
+- **supervisor_companies**：user_id, company_id（主管↔公司 多對多，PK 複合）
+
+> 階層：公司(companies) > 群組(groups) > 人員(users)。`users.company_id` 用 ALTER 補欄位（啟動時自動，相容既有資料）。
 
 ## 主要 API 端點
 - `POST /api/login` / `register` / `logout` / `forgot-password` / `change-password`
 - `POST /api/submit-report` — 離開類型不需要 location/task
 - `GET /api/my-reports` — 支援 startDate/endDate/limit 參數
-- `GET /api/last-locations` — 同事最新位置（含 created_at）
-- `GET /api/status-board` — 今日狀態板
-- `GET /api/export` — CSV 匯出（需 admin）
-- `PUT /api/users/:userId/group` — 設定分組與角色（group_id + is_supervisor）
+- `GET /api/last-locations` — 同事最新位置（含 created_at；依公司範圍）
+- `GET /api/status-board` — 今日狀態板（依公司範圍）
+- `GET /api/export` — CSV 匯出（admin 全部 / 主管限管轄公司）
+- `GET/POST/PUT/DELETE /api/companies[/:id]` — 公司管理（GET 需登入；增改刪需 admin）
+- `PUT /api/users/:userId/group` — 設定分組/所屬公司/角色/主管管轄公司（groupId + companyId + isSupervisor + supervisorCompanyIds[]）
 
 ## 前台 report.html 功能
 - 到達/離開/隨車上下車 4 種回報類型（2×2 按鈕）
