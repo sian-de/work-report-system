@@ -705,6 +705,8 @@ const REPORT_JOINS = ` FROM reports r
 // 取得回報紀錄（支援日期區間、公司/群組/類型篩選；含公司/群組標籤與小計）
 app.get('/api/reports', requireAuth, async (req, res) => {
   const { page = 1, limit = 50 } = req.query;
+  // limit=0 表示不分頁，回傳符合篩選的全部資料（避免同一人的回報被頁面邊界切斷）
+  const noLimit = String(limit) === '0';
   const offset = (page - 1) * limit;
 
   try {
@@ -714,8 +716,9 @@ app.get('/api/reports', requireAuth, async (req, res) => {
     const total = countResult.rows[0].total;
 
     const reports = await db.execute({
-      sql: `SELECT r.*, c.name as company_name, g.name as group_name${REPORT_JOINS}${where} ORDER BY r.created_at DESC LIMIT ? OFFSET ?`,
-      args: [...params, Number(limit), Number(offset)],
+      sql: `SELECT r.*, c.name as company_name, g.name as group_name${REPORT_JOINS}${where} ORDER BY r.created_at DESC`
+        + (noLimit ? '' : ' LIMIT ? OFFSET ?'),
+      args: noLimit ? params : [...params, Number(limit), Number(offset)],
     });
 
     // 小計（整個篩選結果，非僅當頁）
@@ -723,7 +726,7 @@ app.get('/api/reports', requireAuth, async (req, res) => {
     const compAgg = await db.execute({ sql: `SELECT COALESCE(c.name, '未指定公司') as k, COUNT(*) as c${REPORT_JOINS}${where} GROUP BY c.name ORDER BY c DESC`, args: params });
 
     res.json({
-      data: reports.rows, total, page: Number(page), totalPages: Math.ceil(total / limit),
+      data: reports.rows, total, page: Number(page), totalPages: noLimit ? 1 : Math.ceil(total / limit),
       typeCounts: typeAgg.rows, companyCounts: compAgg.rows,
     });
   } catch (err) {

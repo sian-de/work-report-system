@@ -756,7 +756,6 @@
         <div class="report-list" id="report-list">
           <div class="empty-state"><div class="icon">⏳</div><p>載入中...</p></div>
         </div>
-        <div class="pagination" id="pagination"></div>
         <div class="refresh-indicator">每 30 秒檢查新回報（有更新才提示，不打斷操作）</div>
       </div>
 
@@ -1122,15 +1121,15 @@
       loadReports(1);
     }
 
-    async function loadReports(page = 1) {
-      currentPage = page;
+    async function loadReports() {
+      currentPage = 1;
       const params = reportFilterParams();
-      params.append('page', page); params.append('limit', 20);
+      params.append('limit', 0); // 不分頁：一次載入符合篩選的全部，避免同一人回報被切斷
 
       try {
         const res = await fetch('/api/reports?' + params, { headers: authHeaders() });
         if (!res.ok) return;
-        const { data, total, totalPages, typeCounts, companyCounts } = await res.json();
+        const { data, total, typeCounts, companyCounts } = await res.json();
         reportsTotalSeen = total;
         document.getElementById('new-reports-banner').style.display = 'none';
         renderSubtotals(total, typeCounts, companyCounts);
@@ -1138,7 +1137,6 @@
 
         if (data.length === 0) {
           list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>沒有找到回報紀錄</p></div>';
-          document.getElementById('pagination').innerHTML = '';
           return;
         }
 
@@ -1192,20 +1190,7 @@
               <div style="padding:0 4px">${itemsHtml}</div>
             </div>`;
         }).join('');
-
-        renderPagination(totalPages);
       } catch (e) {}
-    }
-
-    function renderPagination(totalPages) {
-      const pag = document.getElementById('pagination');
-      if (totalPages <= 1) { pag.innerHTML = ''; return; }
-      let html = `<button ${currentPage === 1 ? 'disabled' : ''} onclick="loadReports(${currentPage - 1})">上一頁</button>`;
-      for (let i = 1; i <= Math.min(totalPages, 10); i++) {
-        html += `<button class="${i === currentPage ? 'active' : ''}" onclick="loadReports(${i})">${i}</button>`;
-      }
-      html += `<button ${currentPage === totalPages ? 'disabled' : ''} onclick="loadReports(${currentPage + 1})">下一頁</button>`;
-      pag.innerHTML = html;
     }
 
     function resetFilters() {
@@ -1513,7 +1498,7 @@
         if (!res.ok) { toast(data.error || '修改失敗', 'error'); btn.disabled = false; btn.textContent = '儲存'; return; }
         closeEditModal();
         toast('已儲存', 'success');
-        loadReports(currentPage);
+        loadReports();
       } catch (e) { toast('網路錯誤', 'error'); }
       btn.disabled = false; btn.textContent = '儲存';
     }
@@ -1525,7 +1510,7 @@
         const res = await fetch('/api/reports/' + id, { method: 'DELETE', headers: authHeaders() });
         if (!res.ok) { const d = await res.json(); toast(d.error || '刪除失敗', 'error'); return; }
         toast('已刪除', 'success');
-        loadReports(currentPage);
+        loadReports();
         loadSummary();
       } catch (e) { toast('網路錯誤', 'error'); }
     }
