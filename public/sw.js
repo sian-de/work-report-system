@@ -1,4 +1,4 @@
-const CACHE_NAME = 'work-report-v2';
+const CACHE_NAME = 'work-report-v3';
 const STATIC_ASSETS = [
   '/report.html',
   '/manifest.json',
@@ -30,6 +30,8 @@ self.addEventListener('message', (event) => {
 // 攔截請求：網路優先，失敗時用快取
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // 只處理同源請求；跨來源（地圖圖磚等）交給瀏覽器直接處理，避免干擾
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   // API 請求不快取
   if (event.request.url.includes('/api/')) return;
 
