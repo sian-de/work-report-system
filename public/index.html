@@ -1172,6 +1172,23 @@
       const byCompany = {};
       filtered.forEach(u => { const key = u.company_name || '（未指定公司）'; (byCompany[key] = byCompany[key] || []).push(u); });
 
+      // 每間公司內排序：管理員 → 主管 → 稽查員；同層級再依 組別 → 姓名
+      const roleRank = u => u.role === 'admin' ? 0 : (u.is_supervisor ? 1 : 2);
+      Object.values(byCompany).forEach(arr => arr.sort((a, b) => {
+        const r = roleRank(a) - roleRank(b);
+        if (r) return r;
+        const ga = a.group_name || '￿', gb = b.group_name || '￿'; // 未分組排最後
+        if (ga !== gb) return ga.localeCompare(gb, 'zh-Hant');
+        return (a.display_name || '').localeCompare(b.display_name || '', 'zh-Hant');
+      }));
+
+      // 公司區塊排序：依公司名稱，「（未指定公司）」排最後
+      const companyKeys = Object.keys(byCompany).sort((a, b) => {
+        const au = a === '（未指定公司）', bu = b === '（未指定公司）';
+        if (au !== bu) return au ? 1 : -1;
+        return a.localeCompare(b, 'zh-Hant');
+      });
+
       const cardHtml = u => {
         let roleBadge = '', avatarClass = 'user-bg';
         if (u.role === 'admin') { roleBadge = '<span class="role-badge role-admin">管理員</span>'; avatarClass = 'admin-bg'; }
@@ -1242,10 +1259,10 @@
           </div>`;
       };
 
-      container.innerHTML = Object.entries(byCompany).map(([company, us]) => `
+      container.innerHTML = companyKeys.map(company => `
         <div class="company-section">
-          <div class="company-section-title">🏬 ${escHtml(company)}（${us.length}）</div>
-          <div class="user-cards">${us.map(cardHtml).join('')}</div>
+          <div class="company-section-title">🏬 ${escHtml(company)}（${byCompany[company].length}）</div>
+          <div class="user-cards">${byCompany[company].map(cardHtml).join('')}</div>
         </div>
       `).join('');
 
