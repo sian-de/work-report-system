@@ -827,11 +827,12 @@
     .team-stats .ts-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 
     .team-list-sheet {
-      position: absolute; left: 0; right: 0; bottom: 0; z-index: 450;
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 450;
       background: white; border-radius: 16px 16px 0 0;
       box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
-      max-height: 55%; display: flex; flex-direction: column;
-      transform: translateY(100%); transition: transform 0.28s ease;
+      max-height: 55vh; display: flex; flex-direction: column;
+      transform: translateY(110%); transition: transform 0.28s ease;
+      padding-bottom: env(safe-area-inset-bottom);
     }
     .team-list-sheet.open { transform: translateY(0); }
     .tls-handle { width: 44px; height: 5px; background: #ccc; border-radius: 3px; margin: 10px auto 6px; cursor: pointer; flex-shrink: 0; }
@@ -1144,6 +1145,7 @@
     <div style="padding:0;position:relative">
       <div id="team-map" style="height:calc(100dvh - 140px);width:100%;z-index:1"></div>
       <div class="map-controls">
+        <button class="map-ctrl-btn" id="clear-traj-btn" onclick="clearTrajectory()" style="display:none;background:#e53935">✕ 軌跡</button>
         <button class="map-ctrl-btn" onclick="toggleTeamList()">👥 名單</button>
         <button class="map-ctrl-btn" onclick="loadTeamMap(true)">🔄</button>
       </div>
@@ -1761,6 +1763,9 @@
               <div style="font-size:12px;color:#666;margin-bottom:3px">📍 ${escHtml(p.location || '未填寫')}</div>
               <div style="font-size:12px;color:#666;margin-bottom:3px">📅 ${escHtml(p.report_date || '')} ${escHtml(p.report_time || '')}</div>
               <div style="font-size:12px;color:${stale ? '#9e9e9e' : '#ff9800'};font-weight:600">⏱️ ${ago}${stale ? '（已超過 2 小時）' : ''}</div>
+              <div style="margin-top:8px">
+                <button onclick="showTrajectory('${escAttr(p.user_id)}')" style="width:100%;background:#06c755;color:white;border:none;border-radius:6px;padding:6px;font-size:12px;font-weight:600;cursor:pointer">🛤️ 顯示今日軌跡</button>
+              </div>
             </div>
           `);
           teamClusterGroup.addLayer(marker);
@@ -1841,6 +1846,42 @@
         teamMap.setView(marker.getLatLng(), 16);
         marker.openPopup();
       }
+    }
+
+    // ====== 今日軌跡 ======
+    let teamTrajLayer = null;
+    async function showTrajectory(userId) {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      try {
+        const res = await fetch('/api/trajectory?userId=' + encodeURIComponent(userId) + '&date=' + today, {
+          headers: { 'Authorization': 'Bearer ' + authToken },
+        });
+        if (!res.ok) { alert('查詢軌跡失敗'); return; }
+        const pts = (await res.json()).filter(p => p.gps_latitude && p.gps_longitude);
+        if (pts.length === 0) { alert('今日尚無軌跡資料'); return; }
+
+        clearTrajectory();
+        const latlngs = pts.map(p => [Number(p.gps_latitude), Number(p.gps_longitude)]);
+        teamTrajLayer = L.layerGroup();
+        L.polyline(latlngs, { color: '#4a90d9', weight: 4, opacity: 0.75 }).addTo(teamTrajLayer);
+        pts.forEach((p, i) => {
+          L.circleMarker([Number(p.gps_latitude), Number(p.gps_longitude)], {
+            radius: 6, color: '#fff', weight: 2, fillColor: '#4a90d9', fillOpacity: 1, zIndexOffset: 2000,
+          }).bindPopup(`<b>${i + 1}. ${escHtml(p.task_type || '')}</b><br>${escHtml(p.location || '')}<br>${escHtml(p.report_time || '')}`).addTo(teamTrajLayer);
+        });
+        teamTrajLayer.addTo(teamMap);
+        teamMap.closePopup();
+        teamMap.fitBounds(latlngs, { padding: [50, 50], maxZoom: 16 });
+        document.getElementById('clear-traj-btn').style.display = '';
+      } catch (e) { alert('網路錯誤'); }
+    }
+
+    function clearTrajectory() {
+      if (teamTrajLayer) { teamMap.removeLayer(teamTrajLayer); teamTrajLayer = null; }
+      const btn = document.getElementById('clear-traj-btn');
+      if (btn) btn.style.display = 'none';
     }
 
     // ====== 修改密碼 ======
