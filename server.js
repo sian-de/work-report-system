@@ -679,32 +679,53 @@ app.get('/api/user-today', requireAuth, async (req, res) => {
 
 // ====== 後台 API（需要登入）======
 
-// 取得回報紀錄
+// 組合回報查詢條件（供 /api/reports 與 /api/export 共用）
+async function buildReportFilter(req) {
+  const { date, startDate, endDate, user, keyword, companyId, groupId, taskType } = req.query;
+  const scope = await getScope(req.session);
+  const sc = reportScopeClause(scope, 'r.user_id');
+  let where = ' WHERE 1=1' + sc.clause;
+  const params = [...sc.params];
+  if (date) { where += ' AND r.report_date = ?'; params.push(date); }
+  if (startDate) { where += ' AND r.report_date >= ?'; params.push(startDate); }
+  if (endDate) { where += ' AND r.report_date <= ?'; params.push(endDate); }
+  if (user) { where += ' AND (r.display_name LIKE ? OR r.user_id = ?)'; params.push(`%${user}%`, user); }
+  if (keyword) { where += ' AND (r.location LIKE ? OR r.task_description LIKE ?)'; params.push(`%${keyword}%`, `%${keyword}%`); }
+  if (companyId) { where += ' AND r.user_id IN (SELECT user_id FROM users WHERE company_id = ?)'; params.push(Number(companyId)); }
+  if (groupId) { where += ' AND r.user_id IN (SELECT user_id FROM users WHERE group_id = ?)'; params.push(String(groupId)); }
+  if (taskType) { where += ' AND r.task_type = ?'; params.push(taskType); }
+  return { where, params };
+}
+
+const REPORT_JOINS = ` FROM reports r
+  LEFT JOIN users u ON r.user_id = u.user_id
+  LEFT JOIN companies c ON u.company_id = c.id
+  LEFT JOIN groups g ON u.group_id = CAST(g.id AS TEXT)`;
+
+// 取得回報紀錄（支援日期區間、公司/群組/類型篩選；含公司/群組標籤與小計）
 app.get('/api/reports', requireAuth, async (req, res) => {
-  const { date, user, keyword, page = 1, limit = 50 } = req.query;
+  const { page = 1, limit = 50 } = req.query;
   const offset = (page - 1) * limit;
 
-  let sql = 'SELECT * FROM reports WHERE 1=1';
-  let countSql = 'SELECT COUNT(*) as total FROM reports WHERE 1=1';
-  const params = [];
-
-  // 依公司範圍隔離（管理員全部 / 主管限管轄公司 / 稽查員只看自己）
-  const scope = await getScope(req.session);
-  const sc = reportScopeClause(scope);
-  sql += sc.clause; countSql += sc.clause; params.push(...sc.params);
-
-  if (date) { sql += ' AND report_date = ?'; countSql += ' AND report_date = ?'; params.push(date); }
-  if (user) { sql += ' AND (display_name LIKE ? OR user_id = ?)'; countSql += ' AND (display_name LIKE ? OR user_id = ?)'; params.push(`%${user}%`, user); }
-  if (keyword) { sql += ' AND (location LIKE ? OR task_description LIKE ?)'; countSql += ' AND (location LIKE ? OR task_description LIKE ?)'; params.push(`%${keyword}%`, `%${keyword}%`); }
-
   try {
-    const countResult = await db.execute({ sql: countSql, args: params });
+    const { where, params } = await buildReportFilter(req);
+
+    const countResult = await db.execute({ sql: `SELECT COUNT(*) as total${REPORT_JOINS}${where}`, args: params });
     const total = countResult.rows[0].total;
 
-    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    const reports = await db.execute({ sql, args: [...params, Number(limit), Number(offset)] });
+    const reports = await db.execute({
+      sql: `SELECT r.*, c.name as company_name, g.name as group_name${REPORT_JOINS}${where} ORDER BY r.created_at DESC LIMIT ? OFFSET ?`,
+      args: [...params, Number(limit), Number(offset)],
+    });
 
-    res.json({ data: reports.rows, total, page: Number(page), totalPages: Math.ceil(total / limit) });
+    // 小計（整個篩選結果，非僅當頁）
+    const typeAgg = await db.execute({ sql: `SELECT r.task_type as k, COUNT(*) as c${REPORT_JOINS}${where} GROUP BY r.task_type`, args: params });
+    const compAgg = await db.execute({ sql: `SELECT COALESCE(c.name, '未指定公司') as k, COUNT(*) as c${REPORT_JOINS}${where} GROUP BY c.name ORDER BY c DESC`, args: params });
+
+    res.json({
+      data: reports.rows, total, page: Number(page), totalPages: Math.ceil(total / limit),
+      typeCounts: typeAgg.rows, companyCounts: compAgg.rows,
+    });
   } catch (err) {
     console.error('查詢回報失敗:', err);
     res.status(500).json({ error: '查詢失敗' });
@@ -1078,24 +1099,15 @@ app.get('/api/status-board', requireAuth, async (req, res) => {
   }
 });
 
-// 匯出 CSV（管理員全部；主管限管轄公司；稽查員只匯出自己）
+// 匯出 CSV（沿用回報查詢的所有篩選條件；範圍隔離同 /api/reports）
 app.get('/api/export', requireAuth, async (req, res) => {
   const { startDate, endDate } = req.query;
-
-  let sql = 'SELECT * FROM reports WHERE 1=1';
-  const params = [];
-
-  const scope = await getScope(req.session);
-  const sc = reportScopeClause(scope);
-  sql += sc.clause; params.push(...sc.params);
-
-  if (startDate) { sql += ' AND report_date >= ?'; params.push(startDate); }
-  if (endDate) { sql += ' AND report_date <= ?'; params.push(endDate); }
-
-  sql += ' ORDER BY created_at DESC';
-
   try {
-    const result = await db.execute({ sql, args: params });
+    const { where, params } = await buildReportFilter(req);
+    const result = await db.execute({
+      sql: `SELECT r.*${REPORT_JOINS}${where} ORDER BY r.created_at DESC`,
+      args: params,
+    });
     const reports = result.rows;
 
     const BOM = '﻿';

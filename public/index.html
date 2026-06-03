@@ -339,6 +339,21 @@
     .role-user { background: #e8f5e9; color: #2e7d32; }
     .role-supervisor { background: #e3f2fd; color: #1565c0; }
 
+    /* 回報紀錄：小計列 + 新回報提示 */
+    .report-subtotals {
+      display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+      font-size: 13px; color: #555; margin-bottom: 12px; padding: 0 4px;
+    }
+    .report-subtotals:empty { display: none; }
+    .report-subtotals .rs-total { font-weight: 700; color: #06c755; }
+    .report-subtotals .rs-group { color: #666; }
+    .new-reports-banner {
+      background: #fff3e0; color: #e65100; border: 1px solid #ffcc80;
+      border-radius: 10px; padding: 10px 16px; margin-bottom: 12px;
+      font-size: 14px; font-weight: 600; text-align: center; cursor: pointer;
+    }
+    .new-reports-banner:hover { background: #ffe0b2; }
+
     /* 人員管理工具列 */
     .user-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
     .user-toolbar #user-search {
@@ -616,6 +631,9 @@
       .urt-btn:hover:not(.active) { background: #0f3460; }
       .company-section-title { background: #1a1a2e; color: #06c755; border-bottom-color: #0f3460; }
       .user-editor { border-top-color: #1a3a5c; }
+      .report-subtotals { color: #bbb; }
+      .report-subtotals .rs-group { color: #aaa; }
+      .new-reports-banner { background: #3a2a00; color: #ffb74d; border-color: #5a4000; }
     }
   </style>
 </head>
@@ -689,11 +707,19 @@
 
         <div class="filter-bar">
           <label>日期</label>
-          <input type="date" id="filter-date" />
+          <input type="date" id="filter-start" style="width:140px" />
+          <span style="color:#999;align-self:center">~</span>
+          <input type="date" id="filter-end" style="width:140px" />
+          <label>公司</label>
+          <select id="filter-company"><option value="">全部</option></select>
+          <label>組別</label>
+          <select id="filter-group"><option value="">全部</option></select>
+          <label>類型</label>
+          <select id="filter-type"><option value="">全部</option></select>
           <label>姓名</label>
-          <input type="text" id="filter-user" placeholder="姓名..." style="width:100px" />
+          <input type="text" id="filter-user" placeholder="姓名..." style="width:90px" />
           <label>關鍵字</label>
-          <input type="text" id="filter-keyword" placeholder="地點/內容..." style="width:120px" />
+          <input type="text" id="filter-keyword" placeholder="地點/內容..." style="width:110px" />
           <button class="btn btn-primary" onclick="loadReports()">查詢</button>
           <button class="btn btn-secondary" onclick="resetFilters()">重設</button>
           <span class="spacer"></span>
@@ -701,11 +727,14 @@
           <a href="/admin/track.html" class="btn" style="background:linear-gradient(135deg,#ff9800,#f57c00);color:white;text-decoration:none">🗺️ 軌跡查詢</a>
         </div>
 
+        <div id="report-subtotals" class="report-subtotals"></div>
+        <div id="new-reports-banner" class="new-reports-banner" style="display:none" onclick="applyNewReports()">🔔 偵測到新回報，點此更新</div>
+
         <div class="report-list" id="report-list">
           <div class="empty-state"><div class="icon">⏳</div><p>載入中...</p></div>
         </div>
         <div class="pagination" id="pagination"></div>
-        <div class="refresh-indicator">每 30 秒自動更新</div>
+        <div class="refresh-indicator">每 30 秒檢查新回報（有更新才提示，不打斷操作）</div>
       </div>
 
       <!-- 人員管理頁籤 -->
@@ -845,7 +874,9 @@
       document.getElementById('main-app').style.display = 'block';
       document.getElementById('nav-user').textContent = currentUser.displayName + (isAdmin ? '（管理員）' : '（主管）');
       document.getElementById('today-date').textContent = formatDate(new Date());
-      document.getElementById('filter-date').value = formatDate(new Date());
+      const today = formatDate(new Date());
+      document.getElementById('filter-start').value = today;
+      document.getElementById('filter-end').value = today;
 
       // 管理員才顯示公司管理、分組管理頁籤
       if (isAdmin) {
@@ -856,14 +887,31 @@
       document.getElementById('tab-btn-status').style.display = '';
 
       initTypeEmojiMap();
+      initReportFilters();
       loadSummary();
       loadReports();
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
       autoRefreshTimer = setInterval(() => {
-        if (currentTab !== 'reports') return; // 僅在回報紀錄頁籤自動更新，避免打斷其他頁籤操作
+        if (currentTab !== 'reports') return; // 僅在回報紀錄頁籤檢查
         loadSummary();
-        loadReports(currentPage);
+        checkNewReports(); // 不重繪列表，只在有新回報時提示
       }, 30000);
+    }
+
+    // 載入篩選下拉選項（公司/組別/類型），只做一次
+    let reportFiltersReady = false;
+    async function initReportFilters() {
+      if (reportFiltersReady) return;
+      reportFiltersReady = true;
+      // 類型（固定 4 種）
+      const typeSel = document.getElementById('filter-type');
+      typeSel.innerHTML = '<option value="">全部</option>' + REPORT_TYPES.map(t => `<option value="${escHtml(t.name)}">${t.emoji} ${escHtml(t.name)}</option>`).join('');
+      // 公司 / 組別
+      await Promise.all([loadCompanyOptions(), loadGroupOptions()]);
+      const compSel = document.getElementById('filter-company');
+      compSel.innerHTML = '<option value="">全部</option>' + allCompanies.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+      const grpSel = document.getElementById('filter-group');
+      grpSel.innerHTML = '<option value="">全部</option>' + allGroups.map(g => `<option value="${g.id}">${escHtml(g.name)}${g.company_name ? '（' + escHtml(g.company_name) + '）' : ''}</option>`).join('');
     }
 
     function doLogout() {
@@ -1007,20 +1055,62 @@
       } catch (e) {}
     }
 
+    let reportsTotalSeen = -1;
+
+    function reportFilterParams() {
+      const p = new URLSearchParams();
+      const g = id => document.getElementById(id).value;
+      if (g('filter-start')) p.append('startDate', g('filter-start'));
+      if (g('filter-end')) p.append('endDate', g('filter-end'));
+      if (g('filter-company')) p.append('companyId', g('filter-company'));
+      if (g('filter-group')) p.append('groupId', g('filter-group'));
+      if (g('filter-type')) p.append('taskType', g('filter-type'));
+      if (g('filter-user')) p.append('user', g('filter-user'));
+      if (g('filter-keyword')) p.append('keyword', g('filter-keyword'));
+      return p;
+    }
+
+    function renderSubtotals(total, typeCounts, companyCounts) {
+      const el = document.getElementById('report-subtotals');
+      if (!total) { el.innerHTML = ''; return; }
+      const typeStr = (typeCounts || []).map(t => `${typeEmojiMap[t.k] || ''}${escHtml(t.k || '其他')} ${t.c}`).join('　');
+      const compStr = (companyCounts || []).map(c => `${escHtml(c.k)} ${c.c}`).join('　');
+      el.innerHTML = `<span class="rs-total">共 ${total} 筆</span>`
+        + (typeStr ? `<span class="rs-group">📋 ${typeStr}</span>` : '')
+        + (compStr ? `<span class="rs-group">🏬 ${compStr}</span>` : '');
+    }
+
+    // 自動檢查（不重繪列表）：total 變動才提示
+    async function checkNewReports() {
+      const params = reportFilterParams();
+      params.append('page', 1); params.append('limit', 1);
+      try {
+        const res = await fetch('/api/reports?' + params, { headers: authHeaders() });
+        if (!res.ok) return;
+        const { total } = await res.json();
+        if (reportsTotalSeen >= 0 && total !== reportsTotalSeen) {
+          document.getElementById('new-reports-banner').style.display = '';
+        }
+      } catch (e) {}
+    }
+
+    function applyNewReports() {
+      document.getElementById('new-reports-banner').style.display = 'none';
+      loadReports(1);
+    }
+
     async function loadReports(page = 1) {
       currentPage = page;
-      const date = document.getElementById('filter-date').value;
-      const user = document.getElementById('filter-user').value;
-      const keyword = document.getElementById('filter-keyword').value;
-      const params = new URLSearchParams({ page, limit: 20 });
-      if (date) params.append('date', date);
-      if (user) params.append('user', user);
-      if (keyword) params.append('keyword', keyword);
+      const params = reportFilterParams();
+      params.append('page', page); params.append('limit', 20);
 
       try {
         const res = await fetch('/api/reports?' + params, { headers: authHeaders() });
         if (!res.ok) return;
-        const { data, total, totalPages } = await res.json();
+        const { data, total, totalPages, typeCounts, companyCounts } = await res.json();
+        reportsTotalSeen = total;
+        document.getElementById('new-reports-banner').style.display = 'none';
+        renderSubtotals(total, typeCounts, companyCounts);
         const list = document.getElementById('report-list');
 
         if (data.length === 0) {
@@ -1038,6 +1128,9 @@
 
         list.innerHTML = Object.entries(grouped).map(([name, items]) => {
           const initial = name[0];
+          const companyLabel = items[0].company_name ? '🏬 ' + escHtml(items[0].company_name) : '';
+          const groupLabel = items[0].group_name ? '📁 ' + escHtml(items[0].group_name) : '';
+          const orgLabel = [companyLabel, groupLabel].filter(Boolean).join('　');
           const itemsHtml = items.map((r, i) => {
             const emoji = typeEmojiMap[r.task_type] || '📌';
             const gpsHtml = r.gps_latitude
@@ -1066,7 +1159,10 @@
               <div class="report-top">
                 <div class="report-user">
                   <div class="user-avatar">${escHtml(initial)}</div>
-                  <span class="user-name">${escHtml(name)}</span>
+                  <div>
+                    <span class="user-name">${escHtml(name)}</span>
+                    ${orgLabel ? `<div style="font-size:12px;color:#888;margin-top:2px">${orgLabel}</div>` : ''}
+                  </div>
                 </div>
                 <div class="report-datetime">
                   <div class="rd-date">${items[0].report_date || ''}</div>
@@ -1093,17 +1189,19 @@
     }
 
     function resetFilters() {
-      document.getElementById('filter-date').value = '';
+      const today = formatDate(new Date());
+      document.getElementById('filter-start').value = today;
+      document.getElementById('filter-end').value = today;
+      document.getElementById('filter-company').value = '';
+      document.getElementById('filter-group').value = '';
+      document.getElementById('filter-type').value = '';
       document.getElementById('filter-user').value = '';
       document.getElementById('filter-keyword').value = '';
       loadReports(1);
     }
 
     function exportCSV() {
-      const startDate = document.getElementById('filter-date').value || '';
-      const params = new URLSearchParams();
-      if (startDate) { params.append('startDate', startDate); params.append('endDate', startDate); }
-      window.open('/api/export?' + params, '_blank');
+      window.open('/api/export?' + reportFilterParams(), '_blank');
     }
 
     // ====== 人員管理 ======
