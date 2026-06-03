@@ -350,14 +350,16 @@ app.post('/api/forgot-password', authLimiter, async (req, res) => {
 
 // ====== 群組 API ======
 
-// 取得所有群組（含成員統計）
+// 取得所有群組（含成員統計與所屬公司）
 app.get('/api/groups', requireAuth, async (req, res) => {
   try {
     const groups = await db.execute({
-      sql: `SELECT g.*,
+      sql: `SELECT g.*, c.name as company_name,
               (SELECT COUNT(*) FROM users u WHERE u.group_id = CAST(g.id AS TEXT)) as member_count,
               (SELECT u.display_name FROM users u WHERE u.group_id = CAST(g.id AS TEXT) AND u.is_supervisor = 1 LIMIT 1) as supervisor_name
-            FROM groups g ORDER BY g.name`,
+            FROM groups g
+            LEFT JOIN companies c ON g.company_id = c.id
+            ORDER BY c.name, g.name`,
       args: [],
     });
     res.json(groups.rows);
@@ -382,13 +384,18 @@ app.get('/api/groups/:id/members', requireAuth, async (req, res) => {
   }
 });
 
-// 建立群組
+// 建立群組（須歸屬一間公司）
 app.post('/api/groups', requireAdmin, async (req, res) => {
-  const { name } = req.body;
+  const { name, companyId } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: '群組名稱不能為空' });
+  if (!companyId) return res.status(400).json({ error: '請選擇所屬公司' });
 
   try {
-    await db.execute({ sql: 'INSERT INTO groups (name) VALUES (?)', args: [name.trim()] });
+    const comp = await db.execute({ sql: 'SELECT id FROM companies WHERE id = ?', args: [Number(companyId)] });
+    if (comp.rows.length === 0) return res.status(400).json({ error: '找不到此公司' });
+
+    await db.execute({ sql: 'INSERT INTO groups (name, company_id) VALUES (?, ?)', args: [name.trim(), Number(companyId)] });
+    apiCache.clear();
     res.json({ success: true });
   } catch (err) {
     if (err.message?.includes('UNIQUE')) return res.status(400).json({ error: '此群組名稱已存在' });
@@ -451,7 +458,15 @@ app.put('/api/users/:userId/group', requireAdmin, async (req, res) => {
     // isSupervisor 為 null/undefined 表示不變更
     const newSupervisor = isSupervisor !== null && isSupervisor !== undefined ? (isSupervisor ? 1 : 0) : currentUser.is_supervisor;
     // companyId（所屬公司）：undefined 不變更；空值表示移除
-    const newCompanyId = companyId !== undefined ? (companyId ? Number(companyId) : null) : currentUser.company_id;
+    let newCompanyId = companyId !== undefined ? (companyId ? Number(companyId) : null) : currentUser.company_id;
+
+    // 階層強制：若指派到某群組，所屬公司一律對齊該群組的公司
+    if (newGroupId && newGroupId !== 'web') {
+      const grp = await db.execute({ sql: 'SELECT company_id FROM groups WHERE id = ?', args: [Number(newGroupId)] });
+      if (grp.rows.length > 0 && grp.rows[0].company_id != null) {
+        newCompanyId = Number(grp.rows[0].company_id);
+      }
+    }
 
     await db.execute({
       sql: 'UPDATE users SET group_id = ?, is_supervisor = ?, company_id = ? WHERE user_id = ?',
@@ -555,17 +570,49 @@ app.delete('/api/companies/:id', requireAdmin, async (req, res) => {
 
 // 取得未分組的使用者
 app.get('/api/users/unassigned', requireAuth, async (req, res) => {
+  const { companyId } = req.query;
   try {
-    const result = await db.execute({
-      sql: `SELECT user_id, display_name FROM users
-            WHERE (group_id IS NULL OR group_id = '' OR group_id = 'web') AND role != 'admin'
-            ORDER BY display_name`,
-      args: [],
-    });
+    let sql = `SELECT user_id, display_name FROM users
+               WHERE (group_id IS NULL OR group_id = '' OR group_id = 'web') AND role != 'admin'`;
+    const params = [];
+    // 分組管理加成員時，只列同公司或尚未指定公司的人（指派後會對齊該群組公司）
+    if (companyId) {
+      sql += ' AND (company_id = ? OR company_id IS NULL)';
+      params.push(Number(companyId));
+    }
+    sql += ' ORDER BY display_name';
+    const result = await db.execute({ sql, args: params });
     res.json(result.rows);
   } catch (err) {
     console.error('查詢未分組使用者失敗:', err);
     res.status(500).json({ error: '查詢失敗' });
+  }
+});
+
+// 在某公司設定/取消主管（分組管理用，公司感知；可累加多間公司）
+app.put('/api/users/:userId/supervisor-company', requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const { companyId, enabled } = req.body;
+  if (!companyId) return res.status(400).json({ error: '缺少公司' });
+  try {
+    const user = await db.execute({ sql: 'SELECT user_id FROM users WHERE user_id = ?', args: [userId] });
+    if (user.rows.length === 0) return res.status(404).json({ error: '找不到此使用者' });
+
+    if (enabled) {
+      await db.execute({ sql: 'INSERT OR IGNORE INTO supervisor_companies (user_id, company_id) VALUES (?, ?)', args: [userId, Number(companyId)] });
+      await db.execute({ sql: 'UPDATE users SET is_supervisor = 1 WHERE user_id = ?', args: [userId] });
+    } else {
+      await db.execute({ sql: 'DELETE FROM supervisor_companies WHERE user_id = ? AND company_id = ?', args: [userId, Number(companyId)] });
+      const left = await db.execute({ sql: 'SELECT COUNT(*) as c FROM supervisor_companies WHERE user_id = ?', args: [userId] });
+      if (left.rows[0].c === 0) {
+        await db.execute({ sql: 'UPDATE users SET is_supervisor = 0 WHERE user_id = ?', args: [userId] });
+      }
+    }
+    apiCache.clear();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('設定主管(公司)失敗:', err);
+    res.status(500).json({ error: '設定失敗' });
   }
 });
 
