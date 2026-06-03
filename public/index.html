@@ -756,6 +756,7 @@
         <div class="report-list" id="report-list">
           <div class="empty-state"><div class="icon">⏳</div><p>載入中...</p></div>
         </div>
+        <div class="pagination" id="pagination"></div>
         <div class="refresh-indicator">每 30 秒檢查新回報（有更新才提示，不打斷操作）</div>
       </div>
 
@@ -1121,10 +1122,14 @@
       loadReports(1);
     }
 
+    const PERSONS_PER_PAGE = 10;   // 依「人員」分頁，每頁人數
+    let reportGroups = [];          // [[name, items], ...]，依最近回報排序
+    let reportPersonPage = 1;
+
     async function loadReports() {
       currentPage = 1;
       const params = reportFilterParams();
-      params.append('limit', 0); // 不分頁：一次載入符合篩選的全部，避免同一人回報被切斷
+      params.append('limit', 0); // 一次載入符合篩選的全部，前端再「依人員」分頁，確保每人完整不被切斷
 
       try {
         const res = await fetch('/api/reports?' + params, { headers: authHeaders() });
@@ -1133,12 +1138,6 @@
         reportsTotalSeen = total;
         document.getElementById('new-reports-banner').style.display = 'none';
         renderSubtotals(total, typeCounts, companyCounts);
-        const list = document.getElementById('report-list');
-
-        if (data.length === 0) {
-          list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>沒有找到回報紀錄</p></div>';
-          return;
-        }
 
         const grouped = {};
         data.forEach(r => {
@@ -1146,51 +1145,84 @@
           if (!grouped[key]) grouped[key] = [];
           grouped[key].push(r);
         });
+        reportGroups = Object.entries(grouped); // 順序＝各人最近回報時間（data 已 created_at DESC）
+        reportPersonPage = 1;
+        renderReportList();
+      } catch (e) {}
+    }
 
-        list.innerHTML = Object.entries(grouped).map(([name, items]) => {
-          const initial = name[0];
-          const companyLabel = items[0].company_name ? '🏬 ' + escHtml(items[0].company_name) : '';
-          const groupLabel = items[0].group_name ? '📁 ' + escHtml(items[0].group_name) : '';
-          const orgLabel = [companyLabel, groupLabel].filter(Boolean).join('　');
-          const itemsHtml = items.map((r) => {
-            const emoji = typeEmojiMap[r.task_type] || '📌';
-            const gpsHtml = r.gps_latitude
-              ? `<a class="gps-link" href="https://maps.google.com/?q=${r.gps_latitude},${r.gps_longitude}" target="_blank">地圖</a>`
-              : '';
-            const isAdmin = currentUser && currentUser.role === 'admin';
-            const editBtn = `<button class="btn-edit" onclick='openEditModal(${JSON.stringify({id:r.id,task_type:r.task_type||"其他",location:r.location||"",task_description:r.task_description||""}).replace(/'/g,"&#39;")})'>編輯</button>`;
-            const delBtn = isAdmin ? `<button class="btn-del-report" onclick="deleteReport(${r.id})">刪除</button>` : '';
-            return `
-              <div class="rpt-row">
-                <div class="rpt-time">${r.report_time || ''}</div>
-                <div class="rpt-main">
-                  <span class="rpt-type">${emoji} ${escHtml(r.task_type || '其他')}</span>
-                  <span class="rpt-loc">📍 ${escHtml(r.location || '—')}${gpsHtml ? ' ' + gpsHtml : ''}</span>
-                  ${r.task_description ? `<span class="rpt-desc">📝 ${escHtml(r.task_description)}</span>` : ''}
-                </div>
-                <div class="rpt-actions">${editBtn}${delBtn}</div>
-              </div>`;
-          }).join('');
+    function renderReportList() {
+      const list = document.getElementById('report-list');
+      const pag = document.getElementById('pagination');
+      if (reportGroups.length === 0) {
+        list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>沒有找到回報紀錄</p></div>';
+        pag.innerHTML = '';
+        return;
+      }
 
+      const totalPages = Math.ceil(reportGroups.length / PERSONS_PER_PAGE);
+      if (reportPersonPage > totalPages) reportPersonPage = totalPages;
+      const start = (reportPersonPage - 1) * PERSONS_PER_PAGE;
+      const pageGroups = reportGroups.slice(start, start + PERSONS_PER_PAGE);
+
+      list.innerHTML = pageGroups.map(([name, items]) => {
+        const initial = name[0];
+        const companyLabel = items[0].company_name ? '🏬 ' + escHtml(items[0].company_name) : '';
+        const groupLabel = items[0].group_name ? '📁 ' + escHtml(items[0].group_name) : '';
+        const orgLabel = [companyLabel, groupLabel].filter(Boolean).join('　');
+        const itemsHtml = items.map((r) => {
+          const emoji = typeEmojiMap[r.task_type] || '📌';
+          const gpsHtml = r.gps_latitude
+            ? `<a class="gps-link" href="https://maps.google.com/?q=${r.gps_latitude},${r.gps_longitude}" target="_blank">地圖</a>`
+            : '';
+          const isAdmin = currentUser && currentUser.role === 'admin';
+          const editBtn = `<button class="btn-edit" onclick='openEditModal(${JSON.stringify({id:r.id,task_type:r.task_type||"其他",location:r.location||"",task_description:r.task_description||""}).replace(/'/g,"&#39;")})'>編輯</button>`;
+          const delBtn = isAdmin ? `<button class="btn-del-report" onclick="deleteReport(${r.id})">刪除</button>` : '';
           return `
-            <div class="report-card">
-              <div class="report-top">
-                <div class="report-user">
-                  <div class="user-avatar">${escHtml(initial)}</div>
-                  <div>
-                    <span class="user-name">${escHtml(name)}</span>
-                    ${orgLabel ? `<div style="font-size:12px;color:#888;margin-top:2px">${orgLabel}</div>` : ''}
-                  </div>
-                </div>
-                <div class="report-datetime">
-                  <div class="rd-date">${items[0].report_date || ''}</div>
-                  <div style="font-size:12px;color:#06c755;font-weight:600">${items.length} 筆回報</div>
-                </div>
+            <div class="rpt-row">
+              <div class="rpt-time">${r.report_time || ''}</div>
+              <div class="rpt-main">
+                <span class="rpt-type">${emoji} ${escHtml(r.task_type || '其他')}</span>
+                <span class="rpt-loc">📍 ${escHtml(r.location || '—')}${gpsHtml ? ' ' + gpsHtml : ''}</span>
+                ${r.task_description ? `<span class="rpt-desc">📝 ${escHtml(r.task_description)}</span>` : ''}
               </div>
-              <div style="padding:0 4px">${itemsHtml}</div>
+              <div class="rpt-actions">${editBtn}${delBtn}</div>
             </div>`;
         }).join('');
-      } catch (e) {}
+
+        return `
+          <div class="report-card">
+            <div class="report-top">
+              <div class="report-user">
+                <div class="user-avatar">${escHtml(initial)}</div>
+                <div>
+                  <span class="user-name">${escHtml(name)}</span>
+                  ${orgLabel ? `<div style="font-size:12px;color:#888;margin-top:2px">${orgLabel}</div>` : ''}
+                </div>
+              </div>
+              <div class="report-datetime">
+                <div class="rd-date">${items[0].report_date || ''}</div>
+                <div style="font-size:12px;color:#06c755;font-weight:600">${items.length} 筆回報</div>
+              </div>
+            </div>
+            <div style="padding:0 4px">${itemsHtml}</div>
+          </div>`;
+      }).join('');
+
+      // 依人員分頁控制列
+      if (totalPages <= 1) { pag.innerHTML = ''; return; }
+      let html = `<button ${reportPersonPage === 1 ? 'disabled' : ''} onclick="gotoReportPage(${reportPersonPage - 1})">上一頁</button>`;
+      for (let i = 1; i <= totalPages; i++) {
+        html += `<button class="${i === reportPersonPage ? 'active' : ''}" onclick="gotoReportPage(${i})">${i}</button>`;
+      }
+      html += `<button ${reportPersonPage === totalPages ? 'disabled' : ''} onclick="gotoReportPage(${reportPersonPage + 1})">下一頁</button>`;
+      pag.innerHTML = html + `<div style="width:100%;text-align:center;font-size:12px;color:#999;margin-top:6px">共 ${reportGroups.length} 人 · 每頁 ${PERSONS_PER_PAGE} 人</div>`;
+    }
+
+    function gotoReportPage(p) {
+      reportPersonPage = p;
+      renderReportList();
+      document.getElementById('tab-reports').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     function resetFilters() {
