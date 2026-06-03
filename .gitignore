@@ -3,6 +3,10 @@ node_modules/
 reports.db
 reports.db-shm
 reports.db-wal
+test/test-data.db
+test/test-data.db-shm
+test/test-data.db-wal
+test/test-data.db-journal
 bot.js
 ngrok.exe
 cloudflared.exe
