@@ -123,6 +123,54 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// ====== 公司資料隔離工具 ======
+// 取得請求者的權限範圍：
+//   isAdmin       管理員 → 看全部
+//   isSupervisor  主管   → 看其管轄公司（supervisor_companies）的聯集
+//   一般使用者(稽查員)    → 只看自己
+async function getScope(session) {
+  const { role, userId } = session;
+  if (role === 'admin') return { isAdmin: true, isSupervisor: false, userId, companyIds: [] };
+  const info = await db.execute({ sql: 'SELECT is_supervisor FROM users WHERE user_id = ?', args: [userId] });
+  const isSupervisor = info.rows[0]?.is_supervisor ? true : false;
+  let companyIds = [];
+  if (isSupervisor) {
+    const r = await db.execute({ sql: 'SELECT company_id FROM supervisor_companies WHERE user_id = ?', args: [userId] });
+    companyIds = r.rows.map(x => Number(x.company_id));
+  }
+  return { isAdmin: false, isSupervisor, userId, companyIds };
+}
+
+// 針對「reports 表」的範圍條件（依回報者所屬公司過濾）
+//  - 管理員：無條件
+//  - 主管（有管轄公司）：回報者 company_id ∈ 管轄公司
+//  - 其餘（含未指派公司的主管）：只看自己
+function reportScopeClause(scope, userCol = 'user_id') {
+  if (scope.isAdmin) return { clause: '', params: [] };
+  if (scope.isSupervisor && scope.companyIds.length > 0) {
+    const ph = scope.companyIds.map(() => '?').join(',');
+    return { clause: ` AND ${userCol} IN (SELECT user_id FROM users WHERE company_id IN (${ph}))`, params: [...scope.companyIds] };
+  }
+  return { clause: ` AND ${userCol} = ?`, params: [scope.userId] };
+}
+
+// 針對「users 表」的範圍條件（依人員所屬公司過濾）
+function userScopeClause(scope, companyCol = 'company_id', idCol = 'user_id') {
+  if (scope.isAdmin) return { clause: '', params: [] };
+  if (scope.isSupervisor && scope.companyIds.length > 0) {
+    const ph = scope.companyIds.map(() => '?').join(',');
+    return { clause: ` AND ${companyCol} IN (${ph})`, params: [...scope.companyIds] };
+  }
+  return { clause: ` AND ${idCol} = ?`, params: [scope.userId] };
+}
+
+// 快取範圍鍵：避免不同公司/使用者透過共用快取互相外洩
+function scopeCacheKey(scope) {
+  if (scope.isAdmin) return 'all';
+  if (scope.isSupervisor && scope.companyIds.length > 0) return 'company:' + scope.companyIds.slice().sort((a, b) => a - b).join('-');
+  return 'self:' + scope.userId;
+}
+
 // ====== 記憶體快取工具 ======
 const apiCache = new Map();
 
@@ -388,10 +436,10 @@ app.delete('/api/groups/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// 指派使用者到群組（或移除）+ 設定權限
+// 指派使用者到群組/公司（或移除）+ 設定權限與主管管轄公司
 app.put('/api/users/:userId/group', requireAdmin, async (req, res) => {
   const { userId } = req.params;
-  const { groupId, isSupervisor } = req.body;
+  const { groupId, isSupervisor, companyId, supervisorCompanyIds } = req.body;
 
   try {
     const user = await db.execute({ sql: 'SELECT * FROM users WHERE user_id = ?', args: [userId] });
@@ -400,18 +448,108 @@ app.put('/api/users/:userId/group', requireAdmin, async (req, res) => {
     const currentUser = user.rows[0];
     // groupId 為 null 或空字串表示移除群組
     const newGroupId = groupId !== undefined ? (groupId ? String(groupId) : null) : currentUser.group_id;
-    // isSupervisor 為 null 表示不變更
+    // isSupervisor 為 null/undefined 表示不變更
     const newSupervisor = isSupervisor !== null && isSupervisor !== undefined ? (isSupervisor ? 1 : 0) : currentUser.is_supervisor;
+    // companyId（所屬公司）：undefined 不變更；空值表示移除
+    const newCompanyId = companyId !== undefined ? (companyId ? Number(companyId) : null) : currentUser.company_id;
 
     await db.execute({
-      sql: 'UPDATE users SET group_id = ?, is_supervisor = ? WHERE user_id = ?',
-      args: [newGroupId, newSupervisor, userId],
+      sql: 'UPDATE users SET group_id = ?, is_supervisor = ?, company_id = ? WHERE user_id = ?',
+      args: [newGroupId, newSupervisor, newCompanyId, userId],
     });
-    apiCache.delete('users');
+
+    // 主管管轄公司（多對多）
+    if (Array.isArray(supervisorCompanyIds)) {
+      await db.execute({ sql: 'DELETE FROM supervisor_companies WHERE user_id = ?', args: [userId] });
+      if (newSupervisor) {
+        const ids = [...new Set(supervisorCompanyIds.map(Number).filter(n => Number.isInteger(n)))];
+        for (const cid of ids) {
+          await db.execute({ sql: 'INSERT OR IGNORE INTO supervisor_companies (user_id, company_id) VALUES (?, ?)', args: [userId, cid] });
+        }
+      }
+    } else if (newSupervisor === 0) {
+      // 取消主管身分 → 清空管轄公司
+      await db.execute({ sql: 'DELETE FROM supervisor_companies WHERE user_id = ?', args: [userId] });
+    }
+
+    apiCache.clear(); // 權限/公司異動 → 清空快取避免範圍快取陳舊
     res.json({ success: true });
   } catch (err) {
     console.error('指派群組失敗:', err);
     res.status(500).json({ error: '指派失敗' });
+  }
+});
+
+// ====== 公司 API ======
+
+// 取得所有公司
+app.get('/api/companies', requireAuth, async (req, res) => {
+  try {
+    const companies = await db.execute({
+      sql: `SELECT c.*,
+              (SELECT COUNT(*) FROM users u WHERE u.company_id = c.id) as member_count
+            FROM companies c ORDER BY c.name`,
+      args: [],
+    });
+    res.json(companies.rows);
+  } catch (err) {
+    console.error('查詢公司失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
+});
+
+// 建立公司
+app.post('/api/companies', requireAdmin, async (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: '公司名稱不能為空' });
+  try {
+    await db.execute({ sql: 'INSERT INTO companies (name) VALUES (?)', args: [name.trim()] });
+    apiCache.clear();
+    res.json({ success: true });
+  } catch (err) {
+    if (err.message?.includes('UNIQUE')) return res.status(400).json({ error: '此公司名稱已存在' });
+    console.error('建立公司失敗:', err);
+    res.status(500).json({ error: '建立失敗' });
+  }
+});
+
+// 修改公司名稱
+app.put('/api/companies/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: '公司名稱不能為空' });
+  try {
+    const existing = await db.execute({ sql: 'SELECT id FROM companies WHERE id = ?', args: [Number(id)] });
+    if (existing.rows.length === 0) return res.status(404).json({ error: '找不到此公司' });
+    await db.execute({ sql: 'UPDATE companies SET name = ? WHERE id = ?', args: [name.trim(), Number(id)] });
+    apiCache.clear();
+    res.json({ success: true });
+  } catch (err) {
+    if (err.message?.includes('UNIQUE')) return res.status(400).json({ error: '此公司名稱已存在' });
+    console.error('修改公司失敗:', err);
+    res.status(500).json({ error: '修改失敗' });
+  }
+});
+
+// 刪除公司（仍有人員歸屬時不可刪）
+app.delete('/api/companies/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const existing = await db.execute({ sql: 'SELECT id FROM companies WHERE id = ?', args: [Number(id)] });
+    if (existing.rows.length === 0) return res.status(404).json({ error: '找不到此公司' });
+
+    const used = await db.execute({ sql: 'SELECT COUNT(*) as c FROM users WHERE company_id = ?', args: [Number(id)] });
+    if (used.rows[0].c > 0) {
+      return res.status(400).json({ error: `此公司仍有 ${used.rows[0].c} 位人員，請先將其改至其他公司或移除` });
+    }
+
+    await db.execute({ sql: 'DELETE FROM companies WHERE id = ?', args: [Number(id)] });
+    await db.execute({ sql: 'DELETE FROM supervisor_companies WHERE company_id = ?', args: [Number(id)] });
+    apiCache.clear();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('刪除公司失敗:', err);
+    res.status(500).json({ error: '刪除失敗' });
   }
 });
 
@@ -485,20 +623,10 @@ app.get('/api/reports', requireAuth, async (req, res) => {
   let countSql = 'SELECT COUNT(*) as total FROM reports WHERE 1=1';
   const params = [];
 
-  // 主管和管理員可看全部回報，一般使用者只看自己
-  const { role, userId } = req.session;
-  if (role !== 'admin') {
-    const userInfo = await db.execute({ sql: 'SELECT is_supervisor FROM users WHERE user_id = ?', args: [userId] });
-    const u = userInfo.rows[0];
-    if (u && u.is_supervisor) {
-      // 主管：看全部（與管理員相同）
-    } else {
-      // 一般使用者：只看自己的
-      sql += ' AND user_id = ?';
-      countSql += ' AND user_id = ?';
-      params.push(userId);
-    }
-  }
+  // 依公司範圍隔離（管理員全部 / 主管限管轄公司 / 稽查員只看自己）
+  const scope = await getScope(req.session);
+  const sc = reportScopeClause(scope);
+  sql += sc.clause; countSql += sc.clause; params.push(...sc.params);
 
   if (date) { sql += ' AND report_date = ?'; countSql += ' AND report_date = ?'; params.push(date); }
   if (user) { sql += ' AND (display_name LIKE ? OR user_id = ?)'; countSql += ' AND (display_name LIKE ? OR user_id = ?)'; params.push(`%${user}%`, user); }
@@ -560,6 +688,11 @@ app.get('/api/trajectory', requireAuth, async (req, res) => {
   let sql = 'SELECT * FROM reports WHERE gps_latitude IS NOT NULL';
   const params = [];
 
+  // 範圍隔離：主管限管轄公司、稽查員只看自己（即使指定他人 user_id 也查不到）
+  const scope = await getScope(req.session);
+  const sc = reportScopeClause(scope);
+  sql += sc.clause; params.push(...sc.params);
+
   if (userId) { sql += ' AND user_id = ?'; params.push(userId); }
   if (date) {
     sql += ' AND report_date = ?'; params.push(date);
@@ -592,14 +725,16 @@ app.get('/api/trajectory', requireAuth, async (req, res) => {
 });
 
 // 取得有 GPS 資料的使用者列表（快取 120 秒）
-app.get('/api/gps-users', requireAuth, cached('gps-users', 120, null), async (req, res) => {
+app.get('/api/gps-users', requireAuth, async (req, res) => {
   try {
+    const scope = await getScope(req.session);
+    const sc = reportScopeClause(scope, 'r.user_id');
     const result = await db.execute({
-      sql: `SELECT DISTINCT r.user_id, r.display_name, COUNT(*) as report_count,
+      sql: `SELECT r.user_id, r.display_name, COUNT(*) as report_count,
              MIN(r.report_date) as first_date, MAX(r.report_date) as last_date
-           FROM reports r WHERE r.gps_latitude IS NOT NULL
+           FROM reports r WHERE r.gps_latitude IS NOT NULL${sc.clause}
            GROUP BY r.user_id ORDER BY r.display_name`,
-      args: [],
+      args: [...sc.params],
     });
     res.json(result.rows);
   } catch (err) {
@@ -612,24 +747,10 @@ app.get('/api/gps-users', requireAuth, cached('gps-users', 120, null), async (re
 app.get('/api/summary', requireAuth, async (req, res) => {
   const tw = getTaiwanTime();
   const today = tw.date;
-  const { role, userId } = req.session;
+  const scope = await getScope(req.session);
 
-  // 主管和管理員看全部統計，一般使用者看自己
-  let isSupervisor = false;
-  let cacheKey = `summary-user-${userId}`;
-
-  if (role !== 'admin') {
-    const userInfo = await db.execute({ sql: 'SELECT is_supervisor FROM users WHERE user_id = ?', args: [userId] });
-    const u = userInfo.rows[0];
-    if (u && u.is_supervisor) {
-      isSupervisor = true;
-      cacheKey = 'summary';
-    }
-  } else {
-    cacheKey = 'summary';
-  }
-
-  // 檢查快取
+  // 快取依範圍分開，避免跨公司外洩
+  const cacheKey = 'summary-' + scopeCacheKey(scope);
   const now = Date.now();
   const entry = apiCache.get(cacheKey);
   if (entry && now - entry.time < 60000) {
@@ -638,22 +759,24 @@ app.get('/api/summary', requireAuth, async (req, res) => {
 
   try {
     let data;
-    if (role === 'admin' || isSupervisor) {
-      // 管理員和主管：看全部
+    if (scope.isAdmin || (scope.isSupervisor && scope.companyIds.length > 0)) {
+      // 管理員：全部；主管：限管轄公司
+      const rsc = reportScopeClause(scope);
+      const usc = userScopeClause(scope);
       const results = await db.batch([
-        { sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ?', args: [today] },
-        { sql: 'SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ?', args: [today] },
-        { sql: 'SELECT COUNT(*) as count FROM users', args: [] },
+        { sql: `SELECT COUNT(*) as count FROM reports WHERE report_date = ?${rsc.clause}`, args: [today, ...rsc.params] },
+        { sql: `SELECT COUNT(DISTINCT user_id) as count FROM reports WHERE report_date = ?${rsc.clause}`, args: [today, ...rsc.params] },
+        { sql: `SELECT COUNT(*) as count FROM users WHERE 1=1${usc.clause}`, args: [...usc.params] },
       ]);
       const totalReports = results[0].rows[0].count;
       const totalUsers = results[1].rows[0].count;
       const allUsers = results[2].rows[0].count;
       data = { today, totalReports, totalUsers, allUsers, reportRate: allUsers > 0 ? Math.round((totalUsers / allUsers) * 100) : 0 };
     } else {
-      // 一般使用者
+      // 稽查員（或未指派公司的主管）：只看自己
       const result = await db.execute({
         sql: 'SELECT COUNT(*) as count FROM reports WHERE report_date = ? AND user_id = ?',
-        args: [today, userId],
+        args: [today, scope.userId],
       });
       data = { today, totalReports: result.rows[0].count, totalUsers: result.rows[0].count > 0 ? 1 : 0, allUsers: 1, reportRate: result.rows[0].count > 0 ? 100 : 0 };
     }
@@ -666,18 +789,27 @@ app.get('/api/summary', requireAuth, async (req, res) => {
   }
 });
 
-// 取得所有使用者（快取 60 秒）
-app.get('/api/users', requireAuth, cached('users', 60, null), async (req, res) => {
+// 取得使用者（依公司範圍隔離；含所屬公司與主管管轄公司）
+app.get('/api/users', requireAuth, async (req, res) => {
   try {
+    const scope = await getScope(req.session);
+    const usc = userScopeClause(scope, 'u.company_id', 'u.user_id');
     const result = await db.execute({
-      sql: `SELECT u.user_id, u.display_name, u.role, u.group_id, u.is_supervisor, u.created_at,
-              g.name as group_name
+      sql: `SELECT u.user_id, u.display_name, u.role, u.group_id, u.is_supervisor, u.company_id, u.created_at,
+              g.name as group_name, c.name as company_name
             FROM users u
             LEFT JOIN groups g ON u.group_id = CAST(g.id AS TEXT)
+            LEFT JOIN companies c ON u.company_id = c.id
+            WHERE 1=1${usc.clause}
             ORDER BY u.display_name`,
-      args: [],
+      args: [...usc.params],
     });
-    res.json(result.rows);
+    // 補上每位主管的管轄公司清單
+    const supRows = await db.execute({ sql: 'SELECT user_id, company_id FROM supervisor_companies', args: [] });
+    const supMap = {};
+    for (const s of supRows.rows) { (supMap[s.user_id] = supMap[s.user_id] || []).push(Number(s.company_id)); }
+    const out = result.rows.map(u => ({ ...u, supervisor_company_ids: supMap[u.user_id] || [] }));
+    res.json(out);
   } catch (err) {
     console.error('查詢使用者失敗:', err);
     res.status(500).json({ error: '查詢失敗' });
@@ -744,7 +876,9 @@ app.delete('/api/users/:userId', requireAdmin, async (req, res) => {
   }
   try {
     await db.execute({ sql: 'DELETE FROM reports WHERE user_id = ?', args: [userId] });
+    await db.execute({ sql: 'DELETE FROM supervisor_companies WHERE user_id = ?', args: [userId] });
     await db.execute({ sql: 'DELETE FROM users WHERE user_id = ?', args: [userId] });
+    apiCache.clear();
     res.json({ success: true });
   } catch (err) {
     console.error('刪除人員失敗:', err);
@@ -778,6 +912,28 @@ app.post('/api/change-password', requireAuth, async (req, res) => {
 // 全員最後位置（所有登入使用者可看）
 app.get('/api/last-locations', requireAuth, async (req, res) => {
   try {
+    const scope = await getScope(req.session);
+    // 地圖範圍：管理員全部；主管→管轄公司；稽查員→自己所屬公司同事
+    let clause = '';
+    const params = [];
+    if (!scope.isAdmin) {
+      let companyIds = null;
+      if (scope.isSupervisor && scope.companyIds.length > 0) {
+        companyIds = scope.companyIds;
+      } else {
+        const me = await db.execute({ sql: 'SELECT company_id FROM users WHERE user_id = ?', args: [scope.userId] });
+        const cid = me.rows[0]?.company_id;
+        companyIds = cid ? [Number(cid)] : null;
+      }
+      if (companyIds && companyIds.length > 0) {
+        const ph = companyIds.map(() => '?').join(',');
+        clause = ` AND r.user_id IN (SELECT user_id FROM users WHERE company_id IN (${ph}))`;
+        params.push(...companyIds);
+      } else {
+        clause = ' AND r.user_id = ?';
+        params.push(scope.userId);
+      }
+    }
     const result = await db.execute({
       sql: `SELECT r.user_id, r.display_name, r.report_date, r.report_time,
               r.location, r.task_type, r.gps_latitude, r.gps_longitude, r.created_at
@@ -788,9 +944,9 @@ app.get('/api/last-locations', requireAuth, async (req, res) => {
               WHERE gps_latitude IS NOT NULL
               GROUP BY user_id
             ) latest ON r.user_id = latest.user_id AND r.created_at = latest.max_created
-            WHERE r.gps_latitude IS NOT NULL
+            WHERE r.gps_latitude IS NOT NULL${clause}
             ORDER BY r.display_name`,
-      args: [],
+      args: [...params],
     });
     res.json(result.rows);
   } catch (err) {
@@ -801,27 +957,19 @@ app.get('/api/last-locations', requireAuth, async (req, res) => {
 
 // 人員回報狀態面板（主管/管理員用）
 app.get('/api/status-board', requireAuth, async (req, res) => {
-  const { role, userId } = req.session;
   const tw = getTaiwanTime();
   const today = tw.date;
 
+  const scope = await getScope(req.session);
+  if (!scope.isAdmin && !scope.isSupervisor) {
+    return res.status(403).json({ error: '需要主管或管理員權限' });
+  }
+
   try {
-    // 取得使用者清單（依權限篩選）
-    let userSql = 'SELECT user_id, display_name, group_id, is_supervisor, role FROM users WHERE 1=1';
-    const userParams = [];
-
-    if (role !== 'admin') {
-      const userInfo = await db.execute({ sql: 'SELECT is_supervisor FROM users WHERE user_id = ?', args: [userId] });
-      const u = userInfo.rows[0];
-      if (u && u.is_supervisor) {
-        // 主管：看全部人員（與管理員相同）
-      } else {
-        return res.status(403).json({ error: '需要主管或管理員權限' });
-      }
-    }
-
-    userSql += ' ORDER BY display_name';
-    const users = await db.execute({ sql: userSql, args: userParams });
+    // 取得使用者清單（管理員全部 / 主管限管轄公司）
+    const usc = userScopeClause(scope, 'company_id', 'user_id');
+    const userSql = `SELECT user_id, display_name, group_id, is_supervisor, role FROM users WHERE 1=1${usc.clause} ORDER BY display_name`;
+    const users = await db.execute({ sql: userSql, args: [...usc.params] });
 
     // 取得每人最後一筆回報
     const statusList = [];
@@ -865,12 +1013,16 @@ app.get('/api/status-board', requireAuth, async (req, res) => {
   }
 });
 
-// 匯出 CSV
-app.get('/api/export', requireAdmin, async (req, res) => {
+// 匯出 CSV（管理員全部；主管限管轄公司；稽查員只匯出自己）
+app.get('/api/export', requireAuth, async (req, res) => {
   const { startDate, endDate } = req.query;
 
   let sql = 'SELECT * FROM reports WHERE 1=1';
   const params = [];
+
+  const scope = await getScope(req.session);
+  const sc = reportScopeClause(scope);
+  sql += sc.clause; params.push(...sc.params);
 
   if (startDate) { sql += ' AND report_date >= ?'; params.push(startDate); }
   if (endDate) { sql += ' AND report_date <= ?'; params.push(endDate); }

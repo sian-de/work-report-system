@@ -1584,6 +1584,15 @@
       } catch(e) { return '未知'; }
     }
 
+    // 最後回報是否已超過 2 小時（地圖點位變灰用）
+    function isStale(dateStr, timeStr) {
+      if (!dateStr) return true;
+      try {
+        const dt = new Date(dateStr + 'T' + (timeStr || '00:00') + ':00');
+        return (new Date() - dt) > 2 * 60 * 60 * 1000; // 2 小時
+      } catch (e) { return false; }
+    }
+
     function offsetOverlap(data) {
       // 偵測重疊座標，加微小偏移
       const seen = {};
@@ -1633,7 +1642,9 @@
           const isMe = currentUser && p.user_id === currentUser.userId;
           const ago = timeAgo(p.report_date, p.report_time);
           const typeBadge = p.task_type || '';
-          const bgColor = isMe ? '#4a90d9' : '#06c755';
+          // 最後回報超過 2 小時 → 灰色（位置可能已過時）
+          const stale = isStale(p.report_date, p.report_time);
+          const bgColor = stale ? '#9e9e9e' : (isMe ? '#4a90d9' : '#06c755');
 
           const icon = L.divIcon({
             className: '',
@@ -1653,7 +1664,7 @@
               <div style="font-size:12px;color:#666;margin-bottom:3px">📋 <strong>${escHtml(p.task_type || '未分類')}</strong></div>
               <div style="font-size:12px;color:#666;margin-bottom:3px">📍 ${escHtml(p.location || '未填寫')}</div>
               <div style="font-size:12px;color:#666;margin-bottom:3px">📅 ${escHtml(p.report_date || '')} ${escHtml(p.report_time || '')}</div>
-              <div style="font-size:12px;color:#ff9800;font-weight:600">⏱️ ${ago}</div>
+              <div style="font-size:12px;color:${stale ? '#9e9e9e' : '#ff9800'};font-weight:600">⏱️ ${ago}${stale ? '（已超過 2 小時）' : ''}</div>
             </div>
           `);
           teamMarkers.push(marker);
