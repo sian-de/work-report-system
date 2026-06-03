@@ -178,13 +178,14 @@
     .report-list { margin-top: 8px; }
     .report-card {
       background: white;
-      border-radius: 16px;
-      padding: 22px;
-      margin-bottom: 14px;
+      border-radius: 14px;
+      padding: 14px 18px;
+      margin-bottom: 10px;
       box-shadow: 0 2px 12px rgba(0,0,0,0.05);
       border-left: 4px solid #06c755;
       transition: box-shadow 0.2s;
     }
+    .report-card .report-top { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #f0f2f5; }
     .report-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
     .report-top {
       display: flex;
@@ -338,6 +339,23 @@
     .role-admin { background: #fff3e0; color: #e65100; }
     .role-user { background: #e8f5e9; color: #2e7d32; }
     .role-supervisor { background: #e3f2fd; color: #1565c0; }
+
+    /* 回報紀錄：緊湊橫向列 */
+    .rpt-row {
+      display: grid; grid-template-columns: 50px 1fr auto; gap: 10px;
+      align-items: center; padding: 7px 4px; border-bottom: 1px dashed #eee;
+    }
+    .rpt-row:last-child { border-bottom: none; }
+    .rpt-time { font-size: 12px; font-weight: 600; color: #06c755; white-space: nowrap; }
+    .rpt-main { display: flex; flex-wrap: wrap; gap: 2px 14px; align-items: baseline; font-size: 13px; min-width: 0; }
+    .rpt-type { font-weight: 600; color: #333; white-space: nowrap; }
+    .rpt-loc { color: #666; }
+    .rpt-desc { color: #888; }
+    .rpt-actions { display: flex; gap: 6px; justify-content: flex-end; }
+    @media (max-width: 768px) {
+      .rpt-row { grid-template-columns: 44px 1fr; gap: 6px 8px; }
+      .rpt-actions { grid-column: 2; justify-content: flex-start; margin-top: 2px; }
+    }
 
     /* 回報紀錄：小計列 + 新回報提示 */
     .report-subtotals {
@@ -634,6 +652,11 @@
       .report-subtotals { color: #bbb; }
       .report-subtotals .rs-group { color: #aaa; }
       .new-reports-banner { background: #3a2a00; color: #ffb74d; border-color: #5a4000; }
+      .rpt-row { border-bottom-color: #1a3a5c; }
+      .report-card .report-top { border-bottom-color: #1a3a5c; }
+      .rpt-type { color: #e0e0e0; }
+      .rpt-loc { color: #aaa; }
+      .rpt-desc { color: #999; }
     }
   </style>
 </head>
@@ -1131,26 +1154,23 @@
           const companyLabel = items[0].company_name ? '🏬 ' + escHtml(items[0].company_name) : '';
           const groupLabel = items[0].group_name ? '📁 ' + escHtml(items[0].group_name) : '';
           const orgLabel = [companyLabel, groupLabel].filter(Boolean).join('　');
-          const itemsHtml = items.map((r, i) => {
+          const itemsHtml = items.map((r) => {
             const emoji = typeEmojiMap[r.task_type] || '📌';
             const gpsHtml = r.gps_latitude
-              ? `<a class="gps-link" href="https://maps.google.com/?q=${r.gps_latitude},${r.gps_longitude}" target="_blank">📍 地圖</a>`
+              ? `<a class="gps-link" href="https://maps.google.com/?q=${r.gps_latitude},${r.gps_longitude}" target="_blank">地圖</a>`
               : '';
             const isAdmin = currentUser && currentUser.role === 'admin';
             const editBtn = `<button class="btn-edit" onclick='openEditModal(${JSON.stringify({id:r.id,task_type:r.task_type||"其他",location:r.location||"",task_description:r.task_description||""}).replace(/'/g,"&#39;")})'>編輯</button>`;
             const delBtn = isAdmin ? `<button class="btn-del-report" onclick="deleteReport(${r.id})">刪除</button>` : '';
             return `
-              <div style="display:flex;gap:12px;padding:12px 0;${i < items.length-1 ? 'border-bottom:1px dashed #eee;' : ''}">
-                <div style="text-align:center;min-width:50px">
-                  <div style="font-size:13px;font-weight:600;color:#06c755">${r.report_time}</div>
-                  <div style="font-size:18px;margin-top:2px">${emoji}</div>
+              <div class="rpt-row">
+                <div class="rpt-time">${r.report_time || ''}</div>
+                <div class="rpt-main">
+                  <span class="rpt-type">${emoji} ${escHtml(r.task_type || '其他')}</span>
+                  <span class="rpt-loc">📍 ${escHtml(r.location || '—')}${gpsHtml ? ' ' + gpsHtml : ''}</span>
+                  ${r.task_description ? `<span class="rpt-desc">📝 ${escHtml(r.task_description)}</span>` : ''}
                 </div>
-                <div style="flex:1">
-                  <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:2px">${escHtml(r.task_type || '其他')}</div>
-                  <div style="font-size:13px;color:#666">📍 ${escHtml(r.location)} ${gpsHtml}</div>
-                  <div style="font-size:13px;color:#888;margin-top:2px">${escHtml(r.task_description)}</div>
-                  <div class="item-actions">${editBtn}${delBtn}</div>
-                </div>
+                <div class="rpt-actions">${editBtn}${delBtn}</div>
               </div>`;
           }).join('');
 
