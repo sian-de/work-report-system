@@ -409,6 +409,16 @@
     .dr-table th:nth-child(7) { width: 28%; }
     .dr-table th:nth-child(8) { width: 12%; }
 
+    /* 單人版（代印稽查員）：6 欄，與前台一致 # 日期時間 類型 地點 處理內容 GPS */
+    .dr-table.dr-single th:nth-child(1) { width: 5%; }
+    .dr-table.dr-single th:nth-child(2) { width: 11%; }
+    .dr-table.dr-single th:nth-child(3) { width: 10%; }
+    .dr-table.dr-single th:nth-child(4) { width: 18%; }
+    .dr-table.dr-single th:nth-child(5) { width: 44%; }
+    .dr-table.dr-single th:nth-child(6) { width: 12%; }
+    .dr-table .dr-dt { white-space: nowrap; line-height: 1.5; }
+    .dr-table .dr-dt .dr-dt-time { color: #888; font-size: 12px; }
+
     /* 頁尾 */
     .dr-footer { margin-top: 14px; text-align: center; font-size: 11px; color: #999; }
 
@@ -849,6 +859,8 @@
           <select id="daily-company"><option value="">全部</option></select>
           <label>組別</label>
           <select id="daily-group"><option value="">全部</option></select>
+          <label>人員</label>
+          <select id="daily-user" title="選擇單一人員可印出該員的「稽查員工作日報表」（代印用）"><option value="">全部</option></select>
           <button class="btn btn-primary" onclick="generateDailyReport()">產生報表</button>
           <span class="spacer"></span>
           <button class="btn btn-secondary" onclick="printDailyReport()">🖨️ 列印</button>
@@ -1355,14 +1367,33 @@
     async function initDailyReport() {
       if (!dailyFiltersReady) {
         dailyFiltersReady = true;
-        await Promise.all([loadCompanyOptions(), loadGroupOptions()]);
+        await Promise.all([loadCompanyOptions(), loadGroupOptions(), loadDailyUsers()]);
         document.getElementById('daily-company').innerHTML = '<option value="">全部</option>' + allCompanies.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
         document.getElementById('daily-group').innerHTML = '<option value="">全部</option>' + allGroups.map(g => `<option value="${g.id}">${escHtml(g.name)}${g.company_name ? '（' + escHtml(g.company_name) + '）' : ''}</option>`).join('');
+        renderDailyUserOptions();
         const today = new Date();
         const first = new Date(today.getFullYear(), today.getMonth(), 1);
         document.getElementById('daily-start').value = formatDate(first);
         document.getElementById('daily-end').value = formatDate(today);
       }
+    }
+
+    // 載入人員清單（供「人員」下拉；範圍由後端 /api/users 依角色隔離）
+    async function loadDailyUsers() {
+      try {
+        const res = await fetch('/api/users', { headers: authHeaders() });
+        if (res.ok) allUsersData = await res.json();
+      } catch (e) {}
+    }
+
+    function renderDailyUserOptions() {
+      const sel = document.getElementById('daily-user');
+      if (!sel) return;
+      const users = (allUsersData || []).slice().sort((a, b) =>
+        (a.company_name || '').localeCompare(b.company_name || '', 'zh-Hant') ||
+        (a.display_name || '').localeCompare(b.display_name || '', 'zh-Hant'));
+      sel.innerHTML = '<option value="">全部</option>' + users.map(u =>
+        `<option value="${escHtml(u.user_id)}">${escHtml(u.display_name)}${u.company_name ? '（' + escHtml(u.company_name) + '）' : ''}</option>`).join('');
     }
 
     function dailyParams() {
@@ -1371,10 +1402,12 @@
       const e = document.getElementById('daily-end').value;
       const c = document.getElementById('daily-company').value;
       const g = document.getElementById('daily-group').value;
+      const u = document.getElementById('daily-user').value;
       if (s) p.append('startDate', s);
       if (e) p.append('endDate', e);
       if (c) p.append('companyId', c);
       if (g) p.append('groupId', g);
+      if (u) p.append('user', u);
       p.append('limit', 0);
       return p;
     }
@@ -1400,13 +1433,24 @@
 
     function renderDailyReport(startDate, endDate) {
       const data = dailyData;
+      const rangeDesc = startDate === endDate ? startDate : `${startDate} ～ ${endDate}`;
+      const now = new Date();
+      const userSel = document.getElementById('daily-user');
+      // 選了單一人員 → 用稽查員前台同款「稽查員工作日報表」（代印用）
+      if (userSel && userSel.value) {
+        renderSinglePersonDaily(data, rangeDesc, now, userSel.value);
+      } else {
+        renderMultiPersonDaily(data, rangeDesc, now);
+      }
+    }
+
+    // 多人/全體：管理員或主管的全體日報表
+    function renderMultiPersonDaily(data, rangeDesc, now) {
       const total = data.length;
       const persons = new Set(data.map(r => r.display_name)).size;
       const days = new Set(data.map(r => r.report_date)).size;
       const types = new Set(data.map(r => r.task_type || '未分類')).size;
 
-      const rangeDesc = startDate === endDate ? startDate : `${startDate} ～ ${endDate}`;
-      const now = new Date();
       // 抬頭公司名稱：依「公司」篩選顯示（未選＝留白）
       const compSel = document.getElementById('daily-company');
       const compName = compSel && compSel.value ? compSel.options[compSel.selectedIndex].text : '';
@@ -1452,6 +1496,69 @@
           <td>${escHtml(r.display_name || '')}</td>
           <td>${escHtml(r.company_name || '-')}</td>
           <td>${escHtml(r.group_name || '-')}</td>
+          <td>${escHtml(r.task_type || '')}</td>
+          <td>${escHtml(r.location || '-')}</td>
+          <td>${escHtml(r.task_description || '-')}</td>
+          <td class="dr-gps">${gps}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      html += `<div class="dr-footer">本報表由「工作動態回報系統」產生　製表時間：${now.toLocaleString('zh-TW')}</div>`;
+      document.getElementById('daily-report').innerHTML = html;
+    }
+
+    // 單人：與稽查員前台完全相同的「稽查員工作日報表」（主管代印某位稽查員）
+    function renderSinglePersonDaily(data, rangeDesc, now, userId) {
+      const total = data.length;
+      const reportedDays = new Set(data.map(r => r.report_date)).size;
+      const dayDiff = reportedDays; // 以實際回報天數計平均（與前台一致的「平均每日筆數」）
+      const types = new Set(data.map(r => r.task_type || '未分類')).size;
+      // 該員姓名/公司：優先用人員清單（即使無資料也能正確顯示抬頭）
+      const u = (allUsersData || []).find(x => x.user_id === userId);
+      const personName = (u && u.display_name) || (data[0] && data[0].display_name) || '';
+      const personCompany = (u && u.company_name) || (data[0] && data[0].company_name) || '';
+
+      let html = `
+        <div class="dr-letterhead">
+          <div class="dr-company">${escHtml(personCompany)}</div>
+          <div class="dr-title">稽查員工作日報表</div>
+          <div class="dr-meta">
+            <span>製表人：${escHtml(personName)}</span>
+            <span>期間：${escHtml(rangeDesc)}</span>
+            <span>製表日期：${escHtml(now.toLocaleDateString('zh-TW'))}</span>
+          </div>
+        </div>
+        <div class="dr-stats">
+          <div class="dr-stat hl"><div class="n">${total}</div><div class="l">總回報筆數</div></div>
+          <div class="dr-stat"><div class="n">${reportedDays}</div><div class="l">回報天數</div></div>
+          <div class="dr-stat"><div class="n">${types}</div><div class="l">事項類型數</div></div>
+          <div class="dr-stat"><div class="n">${total > 0 ? (total / reportedDays).toFixed(1) : 0}</div><div class="l">平均每日筆數</div></div>
+        </div>`;
+
+      if (total === 0) {
+        html += '<div class="empty-state"><div class="icon">📭</div><p>此期間無回報紀錄</p></div>';
+        document.getElementById('daily-report').innerHTML = html;
+        return;
+      }
+
+      html += '<div class="dr-subhead">工作明細</div>';
+      html += `<table class="dr-table dr-single"><thead>
+        <tr><th>#</th><th>日期時間</th><th>類型</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
+        </thead><tbody>`;
+      let lastDate = '';
+      let rowNum = 0;
+      data.forEach(r => {
+        if (r.report_date !== lastDate) {
+          lastDate = r.report_date;
+          const c = data.filter(d => d.report_date === lastDate).length;
+          html += `<tr class="dr-date-row"><td colspan="6">${escHtml(lastDate)}（${c} 筆）</td></tr>`;
+        }
+        rowNum++;
+        const mmdd = (r.report_date || '').slice(5).replace('-', '/');
+        const gps = r.gps_latitude ? `${Number(r.gps_latitude).toFixed(5)}<br>${Number(r.gps_longitude).toFixed(5)}` : '-';
+        html += `<tr>
+          <td>${rowNum}</td>
+          <td class="dr-dt">${escHtml(mmdd)}<br><span class="dr-dt-time">${escHtml(r.report_time || '')}</span></td>
           <td>${escHtml(r.task_type || '')}</td>
           <td>${escHtml(r.location || '-')}</td>
           <td>${escHtml(r.task_description || '-')}</td>
