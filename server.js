@@ -283,7 +283,14 @@ app.post('/api/login', authLimiter, async (req, res) => {
     await upgradePasswordIfNeeded(user.user_id, password, user.password_hash);
 
     const token = createSession(user.user_id, user.display_name, user.role || 'user');
-    res.json({ success: true, token, displayName: user.display_name, role: user.role || 'user', isSupervisor: !!user.is_supervisor, userId: user.user_id });
+
+    // 報表抬頭需要所屬公司名稱
+    let companyName = null;
+    if (user.company_id) {
+      const c = await db.execute({ sql: 'SELECT name FROM companies WHERE id = ?', args: [user.company_id] });
+      companyName = c.rows[0]?.name || null;
+    }
+    res.json({ success: true, token, displayName: user.display_name, role: user.role || 'user', isSupervisor: !!user.is_supervisor, userId: user.user_id, companyName });
   } catch (err) {
     console.error('登入失敗:', err);
     res.status(500).json({ error: '登入失敗' });
@@ -295,11 +302,16 @@ app.get('/api/me', async (req, res) => {
   const session = getSession(req);
   if (!session) return res.status(401).json({ error: '未登入' });
   try {
-    const result = await db.execute({ sql: 'SELECT is_supervisor FROM users WHERE user_id = ?', args: [session.userId] });
-    const isSupervisor = result.rows[0]?.is_supervisor ? true : false;
-    res.json({ userId: session.userId, displayName: session.displayName, role: session.role, isSupervisor });
+    const result = await db.execute({
+      sql: `SELECT u.is_supervisor, c.name AS company_name
+            FROM users u LEFT JOIN companies c ON c.id = u.company_id
+            WHERE u.user_id = ?`,
+      args: [session.userId],
+    });
+    const row = result.rows[0] || {};
+    res.json({ userId: session.userId, displayName: session.displayName, role: session.role, isSupervisor: !!row.is_supervisor, companyName: row.company_name || null });
   } catch (e) {
-    res.json({ userId: session.userId, displayName: session.displayName, role: session.role, isSupervisor: false });
+    res.json({ userId: session.userId, displayName: session.displayName, role: session.role, isSupervisor: false, companyName: null });
   }
 });
 
@@ -1073,29 +1085,48 @@ app.get('/api/status-board', requireAuth, async (req, res) => {
     const userSql = `SELECT user_id, display_name, group_id, is_supervisor, role FROM users WHERE 1=1${usc.clause} ORDER BY display_name`;
     const users = await db.execute({ sql: userSql, args: [...usc.params] });
 
-    // 取得每人最後一筆回報
-    const statusList = [];
-    for (const u of users.rows) {
-      const lastReport = await db.execute({
-        sql: `SELECT report_date, report_time, task_type, location, task_description,
-                gps_latitude, gps_longitude
-              FROM reports WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`,
-        args: [u.user_id],
-      });
+    // C1：避免逐人查詢（N+1）。先一次取回此範圍內所有人的「今日筆數」與「最後一筆回報」，
+    // 再於記憶體組裝，將 2N+1 條查詢收斂為 3 條。
+    const userIds = users.rows.map((u) => u.user_id);
+    const todayCountMap = new Map();
+    const lastReportMap = new Map();
 
-      const todayCount = await db.execute({
-        sql: 'SELECT COUNT(*) as c FROM reports WHERE user_id = ? AND report_date = ?',
-        args: [u.user_id, today],
-      });
+    if (userIds.length > 0) {
+      const placeholders = userIds.map(() => '?').join(',');
 
-      const lr = lastReport.rows[0] || null;
-      statusList.push({
+      // 今日各人回報筆數（GROUP BY 一次取回）
+      const counts = await db.execute({
+        sql: `SELECT user_id, COUNT(*) AS c FROM reports
+              WHERE report_date = ? AND user_id IN (${placeholders})
+              GROUP BY user_id`,
+        args: [today, ...userIds],
+      });
+      for (const row of counts.rows) todayCountMap.set(row.user_id, row.c);
+
+      // 每人最後一筆回報（window function 一次取回）
+      const lasts = await db.execute({
+        sql: `SELECT user_id, report_date, report_time, task_type, location,
+                task_description, gps_latitude, gps_longitude
+              FROM (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn
+                FROM reports WHERE user_id IN (${placeholders})
+              ) WHERE rn = 1`,
+        args: [...userIds],
+      });
+      for (const row of lasts.rows) lastReportMap.set(row.user_id, row);
+    }
+
+    // 依使用者清單（已 ORDER BY display_name）順序組裝
+    const statusList = users.rows.map((u) => {
+      const todayCount = todayCountMap.get(u.user_id) || 0;
+      const lr = lastReportMap.get(u.user_id) || null;
+      return {
         user_id: u.user_id,
         display_name: u.display_name,
         is_supervisor: u.is_supervisor,
         role: u.role,
-        today_count: todayCount.rows[0].c,
-        reported_today: todayCount.rows[0].c > 0,
+        today_count: todayCount,
+        reported_today: todayCount > 0,
         last_report: lr ? {
           date: lr.report_date,
           time: lr.report_time,
@@ -1105,8 +1136,8 @@ app.get('/api/status-board', requireAuth, async (req, res) => {
           lat: lr.gps_latitude,
           lng: lr.gps_longitude,
         } : null,
-      });
-    }
+      };
+    });
 
     res.json({ today, users: statusList });
   } catch (err) {

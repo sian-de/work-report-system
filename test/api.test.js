@@ -123,6 +123,20 @@ test('稽查員無法存取狀態板（403）', async () => {
   assert.equal((await api('GET', '/api/status-board', { token: t })).status, 403);
 });
 
+test('狀態板：管理員取得各人今日筆數與最後回報（C1 彙總查詢）', async () => {
+  const r = await api('GET', '/api/status-board', { token: adminToken });
+  assert.equal(r.status, 200);
+  const byId = new Map(r.data.users.map(u => [u.user_id, u]));
+  // 已回報者：today_count 正確、reported_today=true、last_report 為其最後一筆
+  const empA = byId.get('t_empA');
+  assert.ok(empA && empA.reported_today === true && empA.today_count >= 1, '稽A 今日應有回報');
+  assert.equal(empA.last_report.location, '台北A', '稽A 最後回報地點應為台北A');
+  assert.equal(byId.get('t_empB').last_report.location, '高雄B');
+  // 未回報者：reported_today=false、last_report=null
+  const supA = byId.get('t_supA');
+  assert.ok(supA && supA.reported_today === false && supA.last_report === null, '主A 尚未回報');
+});
+
 test('回報篩選：未來日期區間回 0 筆；類型篩選有效', async () => {
   const future = (await api('GET', '/api/reports?startDate=2099-01-01&endDate=2099-12-31&limit=0', { token: adminToken })).data;
   assert.equal(future.total, 0);
