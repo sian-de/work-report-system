@@ -82,6 +82,11 @@ async function initDB() {
   // groups.company_id：群組歸屬的公司（公司 > 群組 > 人員 階層）
   await addColumn('ALTER TABLE groups ADD COLUMN company_id INTEGER', 'groups.company_id');
 
+  // C2：company_id 索引（須在上方 ALTER 補欄位後才能建立）
+  // 範圍隔離與篩選常以 company_id 過濾，加索引降低全表掃描成本。
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id)');
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_groups_company ON groups(company_id)');
+
   // 預設事項類型種子資料
   const typeCount = await db.execute({ sql: 'SELECT COUNT(*) as c FROM task_types', args: [] });
   if (typeCount.rows[0].c === 0) {
