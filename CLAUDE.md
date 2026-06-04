@@ -73,7 +73,7 @@ work-report-system/
 ## 主要 API 端點
 - `POST /api/login` / `register` / `logout` / `forgot-password` / `change-password`
 - `POST /api/submit-report` — 離開類型不需要 location/task
-- `GET /api/my-reports` — 支援 startDate/endDate/limit 參數
+- `GET /api/my-reports` — 支援 startDate/endDate/limit 參數；報表模式（limit=0）另回傳該員 `companyName`（供前台報表抬頭）
 - `GET /api/last-locations` — 同事最新位置（含 created_at；依公司範圍）
 - `GET /api/status-board` — 今日狀態板（依公司範圍）
 - `GET /api/export` — CSV 匯出（admin 全部 / 主管限管轄公司）
@@ -109,7 +109,7 @@ work-report-system/
 - **列印**：A4 直式，只輸出「抬頭 + 工作明細」（**無摘要、無簽核欄**）。
 
 差異：
-- **前台 report.html**（稽查員單人，`我的紀錄 → 日報表`）：標題「稽查員工作日報表」；公司來自登入回傳 `companyName`；製表人＝本人；欄位 `# | 日期時間(MM/DD＋時間換行) | 類型 | 地點 | 處理內容 | GPS`。
+- **前台 report.html**（稽查員單人，`我的紀錄 → 日報表`）：標題「稽查員工作日報表」；公司名以**伺服器資料為準**——`/api/my-reports`（報表模式 limit=0）回傳該員 `companyName`，抬頭優先採用（fallback `currentUser.companyName`），與後台代印版一致；製表人＝本人；欄位 `# | 日期時間(MM/DD＋時間換行) | 類型 | 地點 | 處理內容 | GPS`。
 - **後台 index.html**（管理員/主管）：
   - **多人版**（人員＝全部）：標題「工作日報表」；公司依「公司」篩選顯示（未選＝留白）；製表人＝登入者；欄位多 `姓名 | 公司 | 組別`（時間 | 姓名 | 公司 | 組別 | 類型 | 地點 | 處理內容 | GPS）。
   - **代印單人版**（人員＝某員）：與前台 report.html 完全相同（標題「稽查員工作日報表」、該員為製表人、其公司為抬頭、6 欄）。人員清單依角色範圍隔離（`/api/users`）；資料以 `/api/reports` 的 `user` 參數過濾。
