@@ -283,7 +283,14 @@ app.post('/api/login', authLimiter, async (req, res) => {
     await upgradePasswordIfNeeded(user.user_id, password, user.password_hash);
 
     const token = createSession(user.user_id, user.display_name, user.role || 'user');
-    res.json({ success: true, token, displayName: user.display_name, role: user.role || 'user', isSupervisor: !!user.is_supervisor, userId: user.user_id });
+
+    // 報表抬頭需要所屬公司名稱
+    let companyName = null;
+    if (user.company_id) {
+      const c = await db.execute({ sql: 'SELECT name FROM companies WHERE id = ?', args: [user.company_id] });
+      companyName = c.rows[0]?.name || null;
+    }
+    res.json({ success: true, token, displayName: user.display_name, role: user.role || 'user', isSupervisor: !!user.is_supervisor, userId: user.user_id, companyName });
   } catch (err) {
     console.error('登入失敗:', err);
     res.status(500).json({ error: '登入失敗' });
@@ -295,11 +302,16 @@ app.get('/api/me', async (req, res) => {
   const session = getSession(req);
   if (!session) return res.status(401).json({ error: '未登入' });
   try {
-    const result = await db.execute({ sql: 'SELECT is_supervisor FROM users WHERE user_id = ?', args: [session.userId] });
-    const isSupervisor = result.rows[0]?.is_supervisor ? true : false;
-    res.json({ userId: session.userId, displayName: session.displayName, role: session.role, isSupervisor });
+    const result = await db.execute({
+      sql: `SELECT u.is_supervisor, c.name AS company_name
+            FROM users u LEFT JOIN companies c ON c.id = u.company_id
+            WHERE u.user_id = ?`,
+      args: [session.userId],
+    });
+    const row = result.rows[0] || {};
+    res.json({ userId: session.userId, displayName: session.displayName, role: session.role, isSupervisor: !!row.is_supervisor, companyName: row.company_name || null });
   } catch (e) {
-    res.json({ userId: session.userId, displayName: session.displayName, role: session.role, isSupervisor: false });
+    res.json({ userId: session.userId, displayName: session.displayName, role: session.role, isSupervisor: false, companyName: null });
   }
 });
 
