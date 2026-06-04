@@ -2207,6 +2207,7 @@
 
     // ====== 日報表功能 ======
     let reportData = [];
+    let reportCompanyName = ''; // 報表抬頭公司名（以 /api/my-reports 伺服器資料為準）
 
     // 預設日期：本月1日到今天
     function initReportDates() {
@@ -2236,6 +2237,7 @@
         if (res.status === 401) { doLogout(); return; }
         const result = await res.json();
         reportData = result.data || [];
+        reportCompanyName = result.companyName || '';
 
         renderReport(startDate, endDate);
       } catch (e) {
@@ -2269,7 +2271,7 @@
       const today = now.toLocaleDateString('zh-TW');
 
       document.getElementById('report-letterhead').style.display = 'block';
-      document.getElementById('lh-company').textContent = currentUser.companyName || '';
+      document.getElementById('lh-company').textContent = reportCompanyName || currentUser.companyName || '';
       document.getElementById('report-title').textContent = '稽查員工作日報表';
       document.getElementById('report-meta').innerHTML =
         `<span>製表人：${escHtml(currentUser.displayName || '')}</span>` +

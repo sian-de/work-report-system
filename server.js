@@ -782,7 +782,13 @@ app.get('/api/my-reports', requireAuth, async (req, res) => {
     if (Number(limit) === 0) {
       sql += ' ORDER BY report_date ASC, report_time ASC';
       const reports = await db.execute({ sql, args: params });
-      return res.json({ data: reports.rows, total });
+      // 報表抬頭需要：使用者所屬公司名稱（以伺服器資料為準，前後台一致）
+      const ur = await db.execute({
+        sql: 'SELECT c.name FROM users u LEFT JOIN companies c ON c.id = u.company_id WHERE u.user_id = ?',
+        args: [userId],
+      });
+      const companyName = ur.rows[0]?.name || null;
+      return res.json({ data: reports.rows, total, companyName });
     }
 
     sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
