@@ -605,27 +605,6 @@
     }
     .rep-block { margin-bottom: 4px; }
 
-    /* 簽核欄 */
-    .report-signoff {
-      display: flex;
-      margin-top: 26px;
-      border: 1px solid #333;
-    }
-    .report-signoff .signoff-cell {
-      flex: 1;
-      border-right: 1px solid #333;
-    }
-    .report-signoff .signoff-cell:last-child { border-right: none; }
-    .report-signoff .signoff-label {
-      text-align: center;
-      font-size: 13px;
-      padding: 7px;
-      border-bottom: 1px solid #333;
-      background: #f5f5f5;
-      color: #333;
-    }
-    .report-signoff .signoff-space { height: 60px; }
-
     /* 頁尾 */
     .report-footer {
       margin-top: 14px;
@@ -650,17 +629,15 @@
         width: 100%;
         padding: 0;
       }
-      /* 抬頭 / 小標 / 摘要 / 簽核 列印時保留配色 */
+      /* 列印只保留抬頭與工作明細：摘要卡片、各類型統計表不列印 */
+      .print-area .report-stats,
+      .print-area #report-typestats-block { display: none !important; }
+      /* 抬頭列印時保留配色 */
       .print-area .report-letterhead { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .print-area .lh-title { font-size: 18px; }
       .print-area .lh-company { font-size: 12px; }
       .print-area .lh-meta { font-size: 10px; }
       .print-area .rep-subhead { font-size: 12px; margin: 12px 0 6px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .print-area .report-stats { gap: 6px; margin-bottom: 12px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .print-area .stat-box { padding: 8px; border: 1px solid #ddd; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .print-area .stat-box .stat-num { font-size: 16px; }
-      .print-area .stat-box .stat-label { font-size: 9px; }
-      .print-area .type-stat-row { font-size: 10px; padding: 4px 6px; }
       .print-area .report-table { min-width: auto; font-size: 10px; table-layout: fixed; width: 100%; }
       .print-area .report-table th { background: #333 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 6px 5px; font-size: 10px; }
       .print-area .report-table td { padding: 5px 5px; font-size: 10px; word-wrap: break-word; overflow-wrap: break-word; }
@@ -672,9 +649,6 @@
       .print-area .report-table th:nth-child(6) { width: 12%; }
       .print-area .report-table .gps-cell { font-size: 8px; color: #666; }
       .print-area .report-table .date-group { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      /* 簽核欄不要被分頁切斷 */
-      .print-area .report-signoff { page-break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .print-area .report-signoff .signoff-label { background: #f5f5f5 !important; }
       .no-print { display: none !important; }
     }
 
@@ -1231,13 +1205,6 @@
                 <thead id="report-thead"></thead>
                 <tbody id="report-tbody"></tbody>
               </table>
-            </div>
-
-            <!-- 簽核欄 -->
-            <div class="report-signoff" id="report-signoff" style="display:none">
-              <div class="signoff-cell"><div class="signoff-label">製表人</div><div class="signoff-space"></div></div>
-              <div class="signoff-cell"><div class="signoff-label">單位主管</div><div class="signoff-space"></div></div>
-              <div class="signoff-cell"><div class="signoff-label">核閱</div><div class="signoff-space"></div></div>
             </div>
 
             <!-- 頁尾 -->
@@ -2300,7 +2267,6 @@
       const now = new Date();
       const genTime = now.toLocaleString('zh-TW');
       const today = now.toLocaleDateString('zh-TW');
-      const reportNo = `${(currentUser.userId || 'NA')}-${startDate.replace(/-/g, '')}-${endDate.replace(/-/g, '')}`;
 
       document.getElementById('report-letterhead').style.display = 'block';
       document.getElementById('lh-company').textContent = currentUser.companyName || '';
@@ -2308,8 +2274,7 @@
       document.getElementById('report-meta').innerHTML =
         `<span>製表人：${escHtml(currentUser.displayName || '')}</span>` +
         `<span>期間：${escHtml(startDate)} ～ ${escHtml(endDate)}</span>` +
-        `<span>製表日期：${escHtml(today)}</span>` +
-        `<span>編號：${escHtml(reportNo)}</span>`;
+        `<span>製表日期：${escHtml(today)}</span>`;
 
       // 統計卡片
       document.getElementById('report-stats').innerHTML = `
@@ -2366,8 +2331,7 @@
 
       document.getElementById('report-tbody').innerHTML = tbodyHtml;
 
-      // 簽核欄與頁尾
-      document.getElementById('report-signoff').style.display = 'flex';
+      // 頁尾
       const footer = document.getElementById('report-footer');
       footer.style.display = 'block';
       footer.textContent = `本報表由「工作動態回報系統」產生　製表時間：${genTime}`;
