@@ -372,21 +372,45 @@
     }
     .new-reports-banner:hover { background: #ffe0b2; }
 
-    /* ====== 日報表 ====== */
+    /* ====== 日報表（與稽查員前台同款正式樣板）====== */
     .daily-report { background: white; border-radius: 14px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.05); }
-    .dr-header { text-align: center; margin-bottom: 16px; }
-    .dr-title { font-size: 20px; font-weight: 700; color: #333; }
-    .dr-subtitle { font-size: 13px; color: #888; margin-top: 4px; }
+
+    /* 正式抬頭 */
+    .dr-letterhead { text-align: center; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 2px solid #333; }
+    .dr-letterhead .dr-company { font-size: 15px; color: #555; letter-spacing: 2px; margin-bottom: 4px; min-height: 18px; }
+    .dr-letterhead .dr-title { font-size: 22px; font-weight: 700; color: #222; letter-spacing: 4px; }
+    .dr-letterhead .dr-meta { margin-top: 10px; font-size: 12px; color: #666; display: flex; justify-content: center; gap: 8px 18px; flex-wrap: wrap; }
+    .dr-letterhead .dr-meta span { white-space: nowrap; }
+
+    /* 摘要卡片 */
     .dr-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
     .dr-stat { background: #f8f9fa; border-radius: 10px; padding: 12px; text-align: center; }
     .dr-stat.hl { background: #e8f5e9; }
     .dr-stat .n { font-size: 24px; font-weight: 700; color: #06c755; }
     .dr-stat .l { font-size: 12px; color: #888; margin-top: 2px; }
-    .dr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .dr-table th, .dr-table td { border: 1px solid #e0e0e0; padding: 6px 8px; text-align: left; vertical-align: top; }
-    .dr-table th { background: #f0f2f5; font-weight: 600; white-space: nowrap; }
-    .dr-table .dr-date-row td { background: #e8f5e9; font-weight: 700; color: #2e7d32; }
-    .dr-table .dr-gps { font-size: 10px; color: #999; white-space: nowrap; }
+
+    /* 區塊小標 */
+    .dr-subhead { font-size: 14px; font-weight: 700; color: #333; border-left: 4px solid #06c755; padding-left: 8px; margin: 16px 0 10px; }
+
+    /* 明細表格 */
+    .dr-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+    .dr-table th { background: #06c755; color: white; padding: 9px 8px; text-align: left; font-weight: 600; white-space: nowrap; }
+    .dr-table td { border-bottom: 1px solid #f0f2f5; padding: 8px; text-align: left; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
+    .dr-table tr:nth-child(even) td { background: #fafafa; }
+    .dr-table .dr-date-row td { background: #f0faf4; font-weight: 700; color: #06c755; }
+    .dr-table .dr-gps { font-size: 10px; color: #999; line-height: 1.5; }
+    /* 欄寬（直式 8 欄）：時間 姓名 公司 組別 類型 地點 處理內容 GPS */
+    .dr-table th:nth-child(1) { width: 7%; }
+    .dr-table th:nth-child(2) { width: 9%; }
+    .dr-table th:nth-child(3) { width: 11%; }
+    .dr-table th:nth-child(4) { width: 9%; }
+    .dr-table th:nth-child(5) { width: 9%; }
+    .dr-table th:nth-child(6) { width: 15%; }
+    .dr-table th:nth-child(7) { width: 28%; }
+    .dr-table th:nth-child(8) { width: 12%; }
+
+    /* 頁尾 */
+    .dr-footer { margin-top: 14px; text-align: center; font-size: 11px; color: #999; }
 
     @media (max-width: 768px) {
       .dr-stats { grid-template-columns: repeat(2, 1fr); }
@@ -394,16 +418,28 @@
       .dr-table th, .dr-table td { padding: 4px 5px; }
     }
 
-    /* 列印：只顯示日報表，A4 橫式 */
+    /* 列印：A4 直式，只留抬頭 + 工作明細（摘要與類型統計不列印）*/
     @media print {
-      @page { size: A4 landscape; margin: 10mm; }
+      @page {
+        size: A4 portrait;
+        margin: 12mm 10mm 14mm;
+        @bottom-right { content: "第 " counter(page) " 頁／共 " counter(pages) " 頁"; font-size: 9px; color: #999; }
+      }
       body { background: white; }
       .navbar, .tabs, .no-print, #tab-reports, #tab-users, #tab-companies, #tab-groups, #tab-status { display: none !important; }
       .container { max-width: none; padding: 0; }
       .daily-report { box-shadow: none; border-radius: 0; padding: 0; }
-      .dr-table th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .dr-table .dr-date-row td { background: #ddd !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .dr-stat { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .dr-stats { display: none !important; }
+      .dr-letterhead { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .dr-letterhead .dr-title { font-size: 18px; }
+      .dr-letterhead .dr-company { font-size: 12px; }
+      .dr-letterhead .dr-meta { font-size: 10px; }
+      .dr-subhead { font-size: 12px; margin: 12px 0 6px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .dr-table { font-size: 9px; }
+      .dr-table th { background: #333 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 5px 4px; }
+      .dr-table td { padding: 4px 4px; }
+      .dr-table .dr-date-row td { background: #eee !important; color: #333 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .dr-table .dr-gps { font-size: 7px; color: #666; }
     }
 
     /* 人員管理工具列 */
@@ -1370,10 +1406,21 @@
       const types = new Set(data.map(r => r.task_type || '未分類')).size;
 
       const rangeDesc = startDate === endDate ? startDate : `${startDate} ～ ${endDate}`;
+      const now = new Date();
+      // 抬頭公司名稱：依「公司」篩選顯示（未選＝留白）
+      const compSel = document.getElementById('daily-company');
+      const compName = compSel && compSel.value ? compSel.options[compSel.selectedIndex].text : '';
+      const maker = (currentUser && currentUser.displayName) || '';
+
       let html = `
-        <div class="dr-header">
+        <div class="dr-letterhead">
+          <div class="dr-company">${escHtml(compName)}</div>
           <div class="dr-title">工作日報表</div>
-          <div class="dr-subtitle">期間：${rangeDesc}　產生時間：${new Date().toLocaleString('zh-TW')}</div>
+          <div class="dr-meta">
+            <span>製表人：${escHtml(maker)}</span>
+            <span>期間：${escHtml(rangeDesc)}</span>
+            <span>製表日期：${escHtml(now.toLocaleDateString('zh-TW'))}</span>
+          </div>
         </div>
         <div class="dr-stats">
           <div class="dr-stat hl"><div class="n">${total}</div><div class="l">總回報筆數</div></div>
@@ -1388,6 +1435,7 @@
         return;
       }
 
+      html += '<div class="dr-subhead">工作明細</div>';
       html += `<table class="dr-table"><thead>
         <tr><th>時間</th><th>姓名</th><th>公司</th><th>組別</th><th>類型</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
         </thead><tbody>`;
@@ -1396,9 +1444,9 @@
         if (r.report_date !== lastDate) {
           lastDate = r.report_date;
           const c = data.filter(d => d.report_date === lastDate).length;
-          html += `<tr class="dr-date-row"><td colspan="8">📅 ${escHtml(lastDate)}（${c} 筆）</td></tr>`;
+          html += `<tr class="dr-date-row"><td colspan="8">${escHtml(lastDate)}（${c} 筆）</td></tr>`;
         }
-        const gps = r.gps_latitude ? `${Number(r.gps_latitude).toFixed(5)},${Number(r.gps_longitude).toFixed(5)}` : '-';
+        const gps = r.gps_latitude ? `${Number(r.gps_latitude).toFixed(5)}<br>${Number(r.gps_longitude).toFixed(5)}` : '-';
         html += `<tr>
           <td>${escHtml(r.report_time || '')}</td>
           <td>${escHtml(r.display_name || '')}</td>
@@ -1411,6 +1459,7 @@
         </tr>`;
       });
       html += '</tbody></table>';
+      html += `<div class="dr-footer">本報表由「工作動態回報系統」產生　製表時間：${now.toLocaleString('zh-TW')}</div>`;
       document.getElementById('daily-report').innerHTML = html;
     }
 
