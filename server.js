@@ -283,7 +283,7 @@ app.post('/api/login', authLimiter, async (req, res) => {
     await upgradePasswordIfNeeded(user.user_id, password, user.password_hash);
 
     const token = createSession(user.user_id, user.display_name, user.role || 'user');
-    res.json({ success: true, token, displayName: user.display_name, role: user.role || 'user' });
+    res.json({ success: true, token, displayName: user.display_name, role: user.role || 'user', isSupervisor: !!user.is_supervisor, userId: user.user_id });
   } catch (err) {
     console.error('登入失敗:', err);
     res.status(500).json({ error: '登入失敗' });
