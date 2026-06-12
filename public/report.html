@@ -895,6 +895,10 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.25);
     }
     .map-ctrl-btn:active { transform: scale(0.96); }
+    .map-ctrl-btn:disabled { opacity: 0.7; }
+    /* 重新整理載入中：圖示旋轉 */
+    #refresh-team-btn.loading .rt-icon { display: inline-block; animation: rt-spin 0.8s linear infinite; }
+    @keyframes rt-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
     .team-stats {
       position: absolute; top: 10px; left: 10px; z-index: 400;
@@ -904,7 +908,16 @@
     }
     .team-stats .ts-on { color: #06c755; }
     .team-stats .ts-off { color: #9e9e9e; }
+    .team-stats .ts-upd { color: #999; font-weight: 500; }
     .team-stats .ts-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+
+    /* 名單篩選列 */
+    .tls-filters { display: flex; gap: 8px; padding: 0 14px 8px; flex-shrink: 0; }
+    .tls-chip {
+      border: 1.5px solid #06c755; background: white; color: #06c755;
+      border-radius: 16px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .tls-chip.active { background: #06c755; color: white; }
 
     .team-list-sheet {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 450;
@@ -937,12 +950,18 @@
 
     @media (prefers-color-scheme: dark) {
       .team-stats { background: rgba(22,33,62,0.95); color: #e0e0e0; }
+      .team-stats .ts-upd { color: #9aa3b2; }
       .team-list-sheet { background: #16213e; }
       .tls-search { background: #0f3460; color: #e0e0e0; border-color: #1a3a5c; }
       .tls-row { border-color: #1a3a5c; }
       .tls-row:active { background: #0f3460; }
       .tls-name { color: #e0e0e0; }
       .tls-handle { background: #44506b; }
+      .tls-chip { background: #16213e; }
+      /* 同事位置地圖資訊框深色 */
+      #team-map .leaflet-popup-content-wrapper { background: #16213e; color: #e0e0e0; }
+      #team-map .leaflet-popup-tip { background: #16213e; }
+      #team-map .leaflet-popup-content div[style*="color:#666"] { color: #b8c0cf !important; }
     }
   </style>
 </head>
@@ -1239,12 +1258,15 @@
       <div class="map-controls">
         <button class="map-ctrl-btn" id="clear-traj-btn" onclick="clearTrajectory()" style="display:none;background:#e53935">✕ 軌跡</button>
         <button class="map-ctrl-btn" onclick="toggleTeamList()">👥 名單</button>
-        <button class="map-ctrl-btn" onclick="loadTeamMap(true)">🔄</button>
+        <button class="map-ctrl-btn" id="refresh-team-btn" onclick="loadTeamMap(true)" title="重新整理"><span class="rt-icon">🔄</span></button>
       </div>
       <div id="team-stats" class="team-stats"></div>
       <div id="team-list-sheet" class="team-list-sheet">
         <div class="tls-handle" onclick="toggleTeamList()"></div>
-        <input id="team-search" class="tls-search" placeholder="🔍 搜尋同事姓名..." oninput="renderTeamList()" />
+        <input id="team-search" class="tls-search" placeholder="🔍 搜尋姓名 / 地點 / 類型..." oninput="renderTeamList()" />
+        <div class="tls-filters">
+          <button id="team-online-toggle" class="tls-chip" onclick="toggleTeamOnlineOnly()">只看在線</button>
+        </div>
         <div id="team-list" class="tls-list"></div>
       </div>
     </div>
@@ -1763,39 +1785,66 @@
     let teamData = [];
     let teamFitted = false;
     let teamRefreshTimer = null;
+    let teamOnlineOnly = false;   // 名單「只看在線」
+    let teamLastSig = '';         // 上次資料簽章（相同則不重建標記，避免閃爍）
+    let teamLastUpdated = null;   // 最後成功更新時間
+    let teamLoading = false;      // 載入中（避免重入、顯示載入回饋）
+
+    function mapScreenActive() {
+      const s = document.getElementById('map-screen');
+      return s && s.classList.contains('show');
+    }
 
     function startTeamAutoRefresh() {
       if (teamRefreshTimer) clearInterval(teamRefreshTimer);
-      teamRefreshTimer = setInterval(() => loadTeamMap(false), 60000); // 每 60 秒，保留視角
+      teamRefreshTimer = setInterval(() => {
+        if (document.hidden || !mapScreenActive()) return; // 背景/離開地圖時不打 API
+        loadTeamMap(false);
+      }, 60000); // 每 60 秒，保留視角
     }
     function stopTeamAutoRefresh() {
       if (teamRefreshTimer) { clearInterval(teamRefreshTimer); teamRefreshTimer = null; }
     }
 
-    function timeAgo(dateStr, timeStr) {
-      if (!dateStr) return '未知';
-      try {
-        const dt = new Date(dateStr + 'T' + (timeStr || '00:00') + ':00');
-        const now = new Date();
-        const diff = now - dt;
-        if (diff < 0) return '剛剛';
-        const mins = Math.floor(diff / 60000);
-        if (mins < 1) return '剛剛';
-        if (mins < 60) return mins + ' 分鐘前';
-        const hours = Math.floor(mins / 60);
-        if (hours < 24) return hours + ' 小時前';
-        const days = Math.floor(hours / 24);
-        return days + ' 天前';
-      } catch(e) { return '未知'; }
+    // 回到前景且仍在地圖頁 → 立即更新一次（背景期間可能已過時）
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && mapScreenActive()) loadTeamMap(false);
+    });
+
+    // 取得「最後回報時間」：優先用伺服器時間戳 created_at（UTC，最準），
+    // 否則退回報告日期+時間（本地字串）。回傳 Date 或 null。
+    function lastSeenAt(p) {
+      if (p && p.created_at) {
+        const s = String(p.created_at).trim().replace(' ', 'T');
+        // SQLite CURRENT_TIMESTAMP 為 UTC 且無時區標記，補上 Z 以正確解讀
+        const hasTz = /[zZ]$|[+\-]\d\d:?\d\d$/.test(s);
+        const d = new Date(hasTz ? s : s + 'Z');
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (p && p.report_date) {
+        const d = new Date(p.report_date + 'T' + (p.report_time || '00:00') + ':00');
+        if (!isNaN(d.getTime())) return d;
+      }
+      return null;
+    }
+
+    function timeAgo(p) {
+      const dt = lastSeenAt(p);
+      if (!dt) return '未知';
+      const diff = Date.now() - dt.getTime();
+      if (diff < 60000) return '剛剛';
+      const mins = Math.floor(diff / 60000);
+      if (mins < 60) return mins + ' 分鐘前';
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return hours + ' 小時前';
+      return Math.floor(hours / 24) + ' 天前';
     }
 
     // 最後回報是否已超過 2 小時（地圖點位變灰用）
-    function isStale(dateStr, timeStr) {
-      if (!dateStr) return true;
-      try {
-        const dt = new Date(dateStr + 'T' + (timeStr || '00:00') + ':00');
-        return (new Date() - dt) > 2 * 60 * 60 * 1000; // 2 小時
-      } catch (e) { return false; }
+    function isStale(p) {
+      const dt = lastSeenAt(p);
+      if (!dt) return true;
+      return (Date.now() - dt.getTime()) > 2 * 60 * 60 * 1000; // 2 小時
     }
 
     function offsetOverlap(data) {
@@ -1815,12 +1864,66 @@
       });
     }
 
+    // 資料簽章：只有「人/座標/類型/時間」變動才需要重建標記
+    function teamSignature(rows) {
+      return rows.map(p => `${p.user_id}|${p.created_at || ''}|${p.gps_latitude}|${p.gps_longitude}|${p.task_type || ''}`).join(';');
+    }
+    function setTeamRefreshLoading(on) {
+      const btn = document.getElementById('refresh-team-btn');
+      if (btn) { btn.classList.toggle('loading', on); btn.disabled = on; }
+    }
+    // 目前個別可見（非叢集內）且開著資訊框的同事 user_id
+    function openPopupUserId() {
+      for (const id in teamMarkersById) {
+        const m = teamMarkersById[id];
+        if (m.isPopupOpen && m.isPopupOpen()) return id;
+      }
+      return null;
+    }
+
+    function buildTeamMarker(p) {
+      const lat = p._lat || Number(p.gps_latitude);
+      const lng = p._lng || Number(p.gps_longitude);
+      const isMe = currentUser && p.user_id === currentUser.userId;
+      const ago = timeAgo(p);
+      const typeBadge = p.task_type || '';
+      const stale = isStale(p); // 超過 2 小時 → 灰色
+      const bgColor = stale ? '#9e9e9e' : (isMe ? '#4a90d9' : '#06c755');
+
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="position:relative">
+          <div style="background:${bgColor};color:white;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35)">${escHtml((p.display_name || '?')[0])}</div>
+          <div style="position:absolute;top:-8px;left:28px;background:white;border:1px solid #ddd;border-radius:6px;padding:1px 5px;font-size:10px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.15)">${escHtml(p.display_name || '')}</div>
+          <div style="position:absolute;top:30px;left:50%;transform:translateX(-50%);background:${bgColor};border-radius:4px;padding:1px 5px;font-size:9px;color:white;white-space:nowrap;opacity:0.9">${escHtml(typeBadge)}</div>
+        </div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+      });
+
+      const marker = L.marker([lat, lng], { icon, zIndexOffset: isMe ? 1000 : 0 });
+      marker.bindPopup(`
+        <div style="font-family:-apple-system,sans-serif;min-width:170px">
+          <div style="font-weight:700;font-size:15px;margin-bottom:6px;color:${bgColor}">${escHtml(p.display_name || '未知')}${isMe ? ' (我)' : ''}</div>
+          <div style="font-size:12px;color:#666;margin-bottom:3px">📋 <strong>${escHtml(p.task_type || '未分類')}</strong></div>
+          <div style="font-size:12px;color:#666;margin-bottom:3px">📍 ${escHtml(p.location || '未填寫')}</div>
+          <div style="font-size:12px;color:#666;margin-bottom:3px">📅 ${escHtml(p.report_date || '')} ${escHtml(p.report_time || '')}</div>
+          <div style="font-size:12px;color:${stale ? '#9e9e9e' : '#ff9800'};font-weight:600">⏱️ ${ago}${stale ? '（已超過 2 小時）' : ''}</div>
+          ${(currentUser && (currentUser.role === 'admin' || currentUser.isSupervisor)) ? `<div style="margin-top:8px">
+            <button onclick="showTrajectory('${escAttr(p.user_id)}')" style="width:100%;background:#06c755;color:white;border:none;border-radius:6px;padding:6px;font-size:12px;font-weight:600;cursor:pointer">🛤️ 顯示今日軌跡</button>
+          </div>` : ''}
+        </div>
+      `);
+      return marker;
+    }
+
     async function loadTeamMap(fit) {
       if (!teamMap) {
         teamMap = L.map('team-map').setView([25.033, 121.565], 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '&copy; OpenStreetMap',
           maxZoom: 18,
+          detectRetina: true, // 高解析螢幕更清晰
         }).addTo(teamMap);
         teamClusterGroup = L.markerClusterGroup({
           maxClusterRadius: 45,
@@ -1829,78 +1932,71 @@
         });
         teamMap.addLayer(teamClusterGroup);
       }
-      teamClusterGroup.clearLayers();
-      teamMarkersById = {};
+
+      if (teamLoading) return;
+      teamLoading = true;
+      setTeamRefreshLoading(true);
 
       try {
         const res = await fetch('/api/last-locations', {
           headers: { 'Authorization': 'Bearer ' + authToken },
         });
-        if (!res.ok) return;
-        const rawData = await res.json();
+        if (res.status === 401) { doLogout(); return; }
+        if (!res.ok) return; // 失敗：不更新「更新於」時間，使用者可看出未刷新
 
+        const rawData = await res.json();
         teamData = rawData;
+        teamLastUpdated = new Date();
         renderTeamList();
 
         if (rawData.length === 0) {
-          document.getElementById('team-stats').innerHTML = '<span>目前沒有同事位置資料</span>';
+          teamClusterGroup.clearLayers();
+          teamMarkersById = {};
+          teamLastSig = '';
           setTimeout(() => teamMap.invalidateSize(), 200);
           return;
         }
 
-        const data = offsetOverlap(rawData);
-        const bounds = [];
+        // 只有資料真的變了（或尚無標記）才重建，避免每分鐘閃爍與關掉資訊框
+        const sig = teamSignature(rawData);
+        const needRebuild = sig !== teamLastSig || Object.keys(teamMarkersById).length === 0;
 
-        data.forEach(p => {
-          if (!p.gps_latitude || !p.gps_longitude) return;
-          const lat = p._lat || Number(p.gps_latitude);
-          const lng = p._lng || Number(p.gps_longitude);
-          bounds.push([lat, lng]);
-
-          const isMe = currentUser && p.user_id === currentUser.userId;
-          const ago = timeAgo(p.report_date, p.report_time);
-          const typeBadge = p.task_type || '';
-          // 最後回報超過 2 小時 → 灰色（位置可能已過時）
-          const stale = isStale(p.report_date, p.report_time);
-          const bgColor = stale ? '#9e9e9e' : (isMe ? '#4a90d9' : '#06c755');
-
-          const icon = L.divIcon({
-            className: '',
-            html: `<div style="position:relative">
-              <div style="background:${bgColor};color:white;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35)">${escHtml((p.display_name || '?')[0])}</div>
-              <div style="position:absolute;top:-8px;left:28px;background:white;border:1px solid #ddd;border-radius:6px;padding:1px 5px;font-size:10px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.15)">${escHtml(p.display_name || '')}</div>
-              <div style="position:absolute;top:30px;left:50%;transform:translateX(-50%);background:${bgColor};border-radius:4px;padding:1px 5px;font-size:9px;color:white;white-space:nowrap;opacity:0.9">${escHtml(typeBadge)}</div>
-            </div>`,
-            iconSize: [36, 36],
-            iconAnchor: [18, 18],
+        if (needRebuild) {
+          const prevOpenId = openPopupUserId();
+          teamClusterGroup.clearLayers();
+          teamMarkersById = {};
+          const data = offsetOverlap(rawData);
+          const bounds = [];
+          data.forEach(p => {
+            if (!p.gps_latitude || !p.gps_longitude) return;
+            const marker = buildTeamMarker(p);
+            bounds.push(marker.getLatLng());
+            teamClusterGroup.addLayer(marker);
+            teamMarkersById[p.user_id] = marker;
           });
+          teamLastSig = sig;
 
-          const marker = L.marker([lat, lng], { icon, zIndexOffset: isMe ? 1000 : 0 });
-          marker.bindPopup(`
-            <div style="font-family:-apple-system,sans-serif;min-width:170px">
-              <div style="font-weight:700;font-size:15px;margin-bottom:6px;color:${bgColor}">${escHtml(p.display_name || '未知')}${isMe ? ' (我)' : ''}</div>
-              <div style="font-size:12px;color:#666;margin-bottom:3px">📋 <strong>${escHtml(p.task_type || '未分類')}</strong></div>
-              <div style="font-size:12px;color:#666;margin-bottom:3px">📍 ${escHtml(p.location || '未填寫')}</div>
-              <div style="font-size:12px;color:#666;margin-bottom:3px">📅 ${escHtml(p.report_date || '')} ${escHtml(p.report_time || '')}</div>
-              <div style="font-size:12px;color:${stale ? '#9e9e9e' : '#ff9800'};font-weight:600">⏱️ ${ago}${stale ? '（已超過 2 小時）' : ''}</div>
-              ${(currentUser && (currentUser.role === 'admin' || currentUser.isSupervisor)) ? `<div style="margin-top:8px">
-                <button onclick="showTrajectory('${escAttr(p.user_id)}')" style="width:100%;background:#06c755;color:white;border:none;border-radius:6px;padding:6px;font-size:12px;font-weight:600;cursor:pointer">🛤️ 顯示今日軌跡</button>
-              </div>` : ''}
-            </div>
-          `);
-          teamClusterGroup.addLayer(marker);
-          teamMarkersById[p.user_id] = marker;
-        });
-
-        // 只在首次或手動重新整理時框選全體；自動更新保留使用者目前視角
-        if ((fit || !teamFitted) && bounds.length > 0) {
-          teamMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
-          teamFitted = true;
+          if ((fit || !teamFitted) && bounds.length > 0) {
+            teamMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
+            teamFitted = true;
+          }
+          // 還原先前開著的資訊框（僅在該標記未被叢集收起時，避免移動視角）
+          if (prevOpenId && teamMarkersById[prevOpenId]) {
+            const m = teamMarkersById[prevOpenId];
+            if (!teamClusterGroup.getVisibleParent || teamClusterGroup.getVisibleParent(m) === m) m.openPopup();
+          }
+        } else if (fit) {
+          // 資料沒變但使用者按了重新整理 → 重新框選全體
+          const b = Object.values(teamMarkersById).map(m => m.getLatLng());
+          if (b.length > 0) teamMap.fitBounds(b, { padding: [30, 30], maxZoom: 15 });
         }
 
         setTimeout(() => teamMap.invalidateSize(), 200);
       } catch (e) {
         console.error('載入同事位置失敗:', e);
+      } finally {
+        teamLoading = false;
+        setTeamRefreshLoading(false);
       }
     }
 
@@ -1914,21 +2010,34 @@
       }
     }
 
-    // 名單 + 搜尋 + 在線/離線統計
+    function toggleTeamOnlineOnly() {
+      teamOnlineOnly = !teamOnlineOnly;
+      const btn = document.getElementById('team-online-toggle');
+      if (btn) { btn.classList.toggle('active', teamOnlineOnly); btn.textContent = teamOnlineOnly ? '✓ 只看在線' : '只看在線'; }
+      renderTeamList();
+    }
+
+    // 名單 + 搜尋（姓名/地點/類型）+ 在線/離線統計 + 最後更新時間
     function renderTeamList() {
       const stats = document.getElementById('team-stats');
       const listEl = document.getElementById('team-list');
       if (!stats || !listEl) return;
 
-      const online = teamData.filter(p => !isStale(p.report_date, p.report_time)).length;
+      const online = teamData.filter(p => !isStale(p)).length;
       const offline = teamData.length - online;
-      stats.innerHTML = `<span class="ts-on"><span class="ts-dot" style="background:#06c755"></span>在線 ${online}</span><span class="ts-off"><span class="ts-dot" style="background:#9e9e9e"></span>離線 ${offline}</span>`;
+      const pad = n => String(n).padStart(2, '0');
+      const upd = teamLastUpdated ? `<span class="ts-upd">更新於 ${pad(teamLastUpdated.getHours())}:${pad(teamLastUpdated.getMinutes())}</span>` : '';
+      stats.innerHTML = `<span class="ts-on"><span class="ts-dot" style="background:#06c755"></span>在線 ${online}</span><span class="ts-off"><span class="ts-dot" style="background:#9e9e9e"></span>離線 ${offline}</span>${upd}`;
 
       const q = (document.getElementById('team-search') ? document.getElementById('team-search').value : '').trim().toLowerCase();
       const rows = teamData
-        .filter(p => !q || (p.display_name || '').toLowerCase().includes(q))
+        .filter(p => !teamOnlineOnly || !isStale(p))
+        .filter(p => !q
+          || (p.display_name || '').toLowerCase().includes(q)
+          || (p.location || '').toLowerCase().includes(q)
+          || (p.task_type || '').toLowerCase().includes(q))
         .sort((a, b) => {
-          const sa = isStale(a.report_date, a.report_time), sb = isStale(b.report_date, b.report_time);
+          const sa = isStale(a), sb = isStale(b);
           if (sa !== sb) return sa ? 1 : -1; // 在線優先
           return (a.display_name || '').localeCompare(b.display_name || '', 'zh-Hant');
         });
@@ -1940,9 +2049,9 @@
 
       listEl.innerHTML = rows.map(p => {
         const isMe = currentUser && p.user_id === currentUser.userId;
-        const stale = isStale(p.report_date, p.report_time);
+        const stale = isStale(p);
         const bg = stale ? '#9e9e9e' : (isMe ? '#4a90d9' : '#06c755');
-        const ago = timeAgo(p.report_date, p.report_time);
+        const ago = timeAgo(p);
         return `
           <div class="tls-row" onclick="locateColleague('${escAttr(p.user_id)}')">
             <div class="tls-avatar" style="background:${bg}">${escHtml((p.display_name || '?')[0])}</div>
