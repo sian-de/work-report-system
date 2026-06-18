@@ -136,6 +136,8 @@
     .gps-success { background: #e8f5e9; color: #2e7d32; }
     .gps-error { background: #fce4ec; color: #c62828; }
     .gps-coords { font-size: 12px; color: #999; margin-top: 6px; text-align: center; }
+    .gps-toggle { display: block; width: 100%; margin-top: 10px; background: #f1f3f5; color: #555; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px; font-size: 13px; font-weight: 600; cursor: pointer; -webkit-appearance: none; }
+    .gps-toggle:active { transform: scale(0.99); }
     .gps-map { height: 190px; border-radius: 10px; margin-top: 10px; display: none; z-index: 1; }
     .gps-map.show { display: block; }
     .gps-hint { font-size: 12px; color: #888; margin-top: 8px; text-align: center; line-height: 1.5; }
@@ -218,6 +220,10 @@
     input[type="text"]:focus, textarea:focus { outline: none; border-color: #06c755; }
     textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
 
+    /* 即時驗證 */
+    input.input-invalid, textarea.input-invalid { border-color: #e53935; background: #fff5f5; }
+    .field-error { color: #e53935; font-size: 12px; margin-top: 6px; }
+
     .submit-btn {
       width: 100%;
       padding: 16px;
@@ -235,6 +241,7 @@
     }
     .submit-btn:active { transform: scale(0.98); }
     .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .submit-btn.not-ready { opacity: 0.55; }
 
     .user-bar {
       display: flex;
@@ -1105,8 +1112,9 @@
         </div>
         <div class="gps-status gps-loading" id="gps-status">正在取得定位中...</div>
         <div class="gps-coords" id="gps-coords"></div>
+        <button type="button" class="gps-toggle" id="gps-map-toggle" onclick="toggleGpsMap()">🗺️ 展開地圖確認位置</button>
         <div id="gps-map" class="gps-map"></div>
-        <div class="gps-hint" id="gps-hint">送出前請先確認地圖上的位置是否正確；若不準或過舊，請點「🔄 重新定位」。</div>
+        <div class="gps-hint" id="gps-hint" style="display:none">請確認地圖上的位置是否正確；若不準或過舊，請點「🔄 重新定位」。</div>
       </div>
 
       <div class="input-group">
@@ -1125,17 +1133,20 @@
             <span class="al-icon">🚏</span>隨車(下車)
           </button>
         </div>
+        <div class="field-error" id="err-type" style="display:none">請選擇回報類型</div>
       </div>
 
       <div id="arrive-fields" style="display:none">
         <div class="input-group">
           <div class="input-label">📍 地點 <span class="required" id="req-location">*必填</span></div>
-          <input type="text" id="input-location" placeholder="例如：板橋地方法院、XX派出所" />
+          <input type="text" id="input-location" placeholder="例如：板橋地方法院、XX派出所" oninput="onReportFieldInput('input-location')" />
+          <div class="field-error" id="err-location" style="display:none">請填寫地點</div>
         </div>
 
         <div class="input-group">
           <div class="input-label">📝 處理內容 <span class="required" id="req-task">*必填</span></div>
-          <textarea id="input-task" placeholder="請輸入處理內容或進度..."></textarea>
+          <textarea id="input-task" placeholder="請輸入處理內容或進度..." oninput="onReportFieldInput('input-task')"></textarea>
+          <div class="field-error" id="err-task" style="display:none">請填寫處理內容</div>
         </div>
       </div>
 
@@ -1359,6 +1370,7 @@
   <script>
     let gpsLat = null, gpsLng = null, selectedType = '';
     let gpsMap = null, gpsMarker = null, gpsCircle = null;
+    let gpsAt = null, gpsAccuracy = null, gpsMapShown = false;
     let authToken = localStorage.getItem('authToken') || '';
     let currentUser = null;
 
@@ -1389,6 +1401,62 @@
       reqLoc.textContent = reqTask.textContent = required ? '*必填' : '（選填）';
       reqLoc.classList.toggle('optional', !required);
       reqTask.classList.toggle('optional', !required);
+
+      // 切換類型 → 清除已標紅的欄位錯誤（不立即重新標紅），更新送出鈕就緒狀態
+      document.getElementById('err-type').style.display = 'none';
+      ['input-location', 'input-task'].forEach(id => document.getElementById(id).classList.remove('input-invalid'));
+      document.getElementById('err-location').style.display = 'none';
+      document.getElementById('err-task').style.display = 'none';
+      updateSubmitReady();
+    }
+
+    // ====== 即時驗證 ======
+    function reportRequiresFields() {
+      const cfg = typeConfig[selectedType];
+      return !!(cfg && cfg.requireFields);
+    }
+
+    // mark=true 時把未通過的欄位即時標紅並捲動到第一個；回傳是否全部通過
+    function validateReport(mark) {
+      let ok = true, firstInvalid = null;
+      const errType = document.getElementById('err-type');
+      if (!selectedType) {
+        ok = false;
+        if (mark) { errType.style.display = 'block'; firstInvalid = firstInvalid || document.querySelector('.arrive-leave-bar'); }
+      } else if (mark) { errType.style.display = 'none'; }
+
+      const loc = document.getElementById('input-location');
+      const task = document.getElementById('input-task');
+      const errLoc = document.getElementById('err-location');
+      const errTask = document.getElementById('err-task');
+      if (reportRequiresFields()) {
+        if (!loc.value.trim()) { ok = false; if (mark) { loc.classList.add('input-invalid'); errLoc.style.display = 'block'; firstInvalid = firstInvalid || loc; } }
+        else if (mark) { loc.classList.remove('input-invalid'); errLoc.style.display = 'none'; }
+        if (!task.value.trim()) { ok = false; if (mark) { task.classList.add('input-invalid'); errTask.style.display = 'block'; firstInvalid = firstInvalid || task; } }
+        else if (mark) { task.classList.remove('input-invalid'); errTask.style.display = 'none'; }
+      } else if (mark) {
+        loc.classList.remove('input-invalid'); errLoc.style.display = 'none';
+        task.classList.remove('input-invalid'); errTask.style.display = 'none';
+      }
+      if (mark && firstInvalid) firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return ok;
+    }
+
+    // 送出鈕「就緒/未就緒」視覺（仍可點擊，點下會即時顯示缺漏，不再用 alert）
+    function updateSubmitReady() {
+      const btn = document.getElementById('submit-btn');
+      if (btn) btn.classList.toggle('not-ready', !validateReport(false));
+    }
+
+    // 欄位輸入時：有內容即清除該欄錯誤、更新就緒狀態
+    function onReportFieldInput(id) {
+      const el = document.getElementById(id);
+      if (el.value.trim()) {
+        el.classList.remove('input-invalid');
+        const err = document.getElementById(id === 'input-location' ? 'err-location' : 'err-task');
+        if (err) err.style.display = 'none';
+      }
+      updateSubmitReady();
     }
 
     function renderEditTypeOptions() {
@@ -1551,6 +1619,7 @@
       updateDateTime();
       getGPS();
       loadTodayCount();
+      updateSubmitReady(); // 尚未選類型 → 送出鈕呈未就緒
       renderEditTypeOptions();
     }
 
@@ -1639,6 +1708,8 @@
         (pos) => {
           gpsLat = pos.coords.latitude;
           gpsLng = pos.coords.longitude;
+          gpsAccuracy = pos.coords.accuracy;
+          gpsAt = Date.now();
           const acc = Math.round(pos.coords.accuracy || 0);
           const lowAcc = acc > 100;
           statusEl.textContent = lowAcc ? `✅ 定位成功（精度較低 ±${acc}m）` : `✅ 定位成功（精度 ±${acc}m）`;
@@ -1647,10 +1718,12 @@
           document.getElementById('gps-hint').textContent = lowAcc
             ? '定位精度較低，建議移到空曠處後再點「🔄 重新定位」。'
             : '請確認地圖上的位置是否正確；若不準或過舊，點「🔄 重新定位」。';
-          renderGpsMap(gpsLat, gpsLng, pos.coords.accuracy);
+          // 地圖預設收合，僅在展開時才繪製（低階手機更省）
+          if (gpsMapShown) renderGpsMap(gpsLat, gpsLng, pos.coords.accuracy);
           if (btn) btn.disabled = false;
         },
         () => {
+          gpsAt = null; gpsAccuracy = null;
           statusEl.textContent = '⚠️ 無法取得 GPS（不影響回報）';
           statusEl.className = 'gps-status gps-error';
           coordsEl.textContent = '將不會記錄 GPS 座標';
@@ -1660,15 +1733,44 @@
       );
     }
 
+    // 展開/收合 GPS 地圖（懶載入：第一次展開且已有座標才繪製）
+    function toggleGpsMap() {
+      gpsMapShown = !gpsMapShown;
+      const mapEl = document.getElementById('gps-map');
+      const hint = document.getElementById('gps-hint');
+      const tgl = document.getElementById('gps-map-toggle');
+      if (gpsMapShown) {
+        mapEl.classList.add('show');
+        if (hint) hint.style.display = '';
+        tgl.textContent = '🗺️ 收合地圖';
+        if (gpsLat != null) renderGpsMap(gpsLat, gpsLng, gpsAccuracy);
+      } else {
+        mapEl.classList.remove('show');
+        if (hint) hint.style.display = 'none';
+        tgl.textContent = '🗺️ 展開地圖確認位置';
+      }
+    }
+
+    // 定位新鮮度：每 30 秒更新「N 分鐘前定位」，超過 5 分鐘提示重新定位
+    function refreshGpsFreshness() {
+      if (gpsAt == null || gpsLat == null) return;
+      const statusEl = document.getElementById('gps-status');
+      const coordsEl = document.getElementById('gps-coords');
+      const sec = Math.floor((Date.now() - gpsAt) / 1000);
+      const ageText = sec < 60 ? '剛剛定位' : Math.floor(sec / 60) + ' 分鐘前定位';
+      coordsEl.textContent = `${gpsLat.toFixed(6)}, ${gpsLng.toFixed(6)}　｜　${ageText}`;
+      if (sec > 5 * 60) {
+        statusEl.textContent = '⚠️ 定位已超過 5 分鐘，建議點「🔄 重新定位」';
+        statusEl.className = 'gps-status gps-loading';
+      }
+    }
+    setInterval(refreshGpsFreshness, 30000);
+
     // ====== 送出回報 ======
     async function submitReport() {
-      if (!selectedType) { alert('請選擇回報類型'); return; }
+      if (!validateReport(true)) return; // 缺漏處即時標紅並捲動，不再用 alert
       const location = document.getElementById('input-location').value.trim();
       const task = document.getElementById('input-task').value.trim();
-      if (selectedType !== '離開') {
-        if (!location) { alert('請填寫地點'); return; }
-        if (!task) { alert('請填寫處理內容'); return; }
-      }
 
       const btn = document.getElementById('submit-btn');
       btn.disabled = true;
@@ -1750,6 +1852,10 @@
         document.getElementById(c.btnId).className = 'al-btn';
       });
       document.getElementById('arrive-fields').style.display = 'none';
+      // 清除即時驗證標記
+      ['input-location', 'input-task'].forEach(id => document.getElementById(id).classList.remove('input-invalid'));
+      ['err-type', 'err-location', 'err-task'].forEach(id => document.getElementById(id).style.display = 'none');
+      updateSubmitReady();
       updateDateTime();
       getGPS();
       loadTodayCount();
