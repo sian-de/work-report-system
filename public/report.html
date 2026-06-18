@@ -157,6 +157,7 @@
       gap: 6px;
     }
     .input-label .required { color: #e53935; font-size: 12px; }
+    .input-label .required.optional { color: #999; }
 
     /* 回報類型按鈕 */
     .arrive-leave-bar {
@@ -319,7 +320,10 @@
       display: flex;
       gap: 8px;
       margin-bottom: 14px;
+      flex-wrap: wrap;
+      align-items: center;
     }
+    .filter-bar .filter-sep { color: #999; font-size: 13px; flex: 0 0 auto; }
     .filter-bar input[type="date"] {
       flex: 1;
       padding: 10px 12px;
@@ -1125,12 +1129,12 @@
 
       <div id="arrive-fields" style="display:none">
         <div class="input-group">
-          <div class="input-label">📍 地點 <span class="required">*必填</span></div>
+          <div class="input-label">📍 地點 <span class="required" id="req-location">*必填</span></div>
           <input type="text" id="input-location" placeholder="例如：板橋地方法院、XX派出所" />
         </div>
 
         <div class="input-group">
-          <div class="input-label">📝 處理內容 <span class="required">*必填</span></div>
+          <div class="input-label">📝 處理內容 <span class="required" id="req-task">*必填</span></div>
           <textarea id="input-task" placeholder="請輸入處理內容或進度..."></textarea>
         </div>
       </div>
@@ -1175,7 +1179,9 @@
       <!-- 紀錄查詢 Tab -->
       <div id="records-tab-content">
         <div class="filter-bar">
-          <input type="date" id="filter-date" />
+          <input type="date" id="filter-start" />
+          <span class="filter-sep">至</span>
+          <input type="date" id="filter-end" />
           <button class="filter-btn" onclick="loadMyRecords()">查詢</button>
           <button class="filter-btn-clear" onclick="clearFilter()">全部</button>
         </div>
@@ -1312,11 +1318,11 @@
       </div>
       <div id="edit-arrive-fields">
         <div class="modal-field">
-          <label>地點</label>
+          <label id="edit-label-location">地點</label>
           <input type="text" id="edit-location" />
         </div>
         <div class="modal-field">
-          <label>處理內容</label>
+          <label id="edit-label-task">處理內容</label>
           <textarea id="edit-task"></textarea>
         </div>
       </div>
@@ -1357,11 +1363,12 @@
     let currentUser = null;
 
     // ====== 回報類型切換 ======
+    // requireFields：地點/內容是否必填。「離開」顯示欄位但為選填。
     const typeConfig = {
-      '到達':       { btnId: 'al-arrive',  css: 'active-arrive',  needFields: true },
-      '離開':       { btnId: 'al-leave',   css: 'active-leave',   needFields: false },
-      '隨車(上車)': { btnId: 'al-onbus',   css: 'active-onbus',   needFields: true },
-      '隨車(下車)': { btnId: 'al-offbus',  css: 'active-offbus',  needFields: true },
+      '到達':       { btnId: 'al-arrive',  css: 'active-arrive',  requireFields: true },
+      '離開':       { btnId: 'al-leave',   css: 'active-leave',   requireFields: false },
+      '隨車(上車)': { btnId: 'al-onbus',   css: 'active-onbus',   requireFields: true },
+      '隨車(下車)': { btnId: 'al-offbus',  css: 'active-offbus',  requireFields: true },
     };
 
     function selectReportType(type) {
@@ -1374,15 +1381,14 @@
       const cfg = typeConfig[type];
       if (cfg) document.getElementById(cfg.btnId).className = 'al-btn ' + cfg.css;
 
-      // 顯示/隱藏欄位
-      const fields = document.getElementById('arrive-fields');
-      if (cfg && cfg.needFields) {
-        fields.style.display = '';
-      } else {
-        fields.style.display = 'none';
-        document.getElementById('input-location').value = '';
-        document.getElementById('input-task').value = '';
-      }
+      // 所有類型皆顯示地點/內容欄位；依類型切換「必填/選填」標記（值不清除，方便切換類型）
+      document.getElementById('arrive-fields').style.display = '';
+      const required = !!(cfg && cfg.requireFields);
+      const reqLoc = document.getElementById('req-location');
+      const reqTask = document.getElementById('req-task');
+      reqLoc.textContent = reqTask.textContent = required ? '*必填' : '（選填）';
+      reqLoc.classList.toggle('optional', !required);
+      reqTask.classList.toggle('optional', !required);
     }
 
     function renderEditTypeOptions() {
@@ -1706,9 +1712,12 @@
         <div class="sd-row"><div class="sd-label">📅 日期</div><div class="sd-value">${dateStr}</div></div>
         <div class="sd-row"><div class="sd-label">🕐 時間</div><div class="sd-value">${timeStr}</div></div>
         <div class="sd-row"><div class="sd-label">📋 類型</div><div class="sd-value">${{'到達':'📍 到達','離開':'🚗 離開','隨車(上車)':'🚌 隨車(上車)','隨車(下車)':'🚏 隨車(下車)'}[selectedType] || selectedType}</div></div>`;
-      if (selectedType !== '離開') {
+      if (location) {
         detailHtml += `
-        <div class="sd-row"><div class="sd-label">📍 地點</div><div class="sd-value">${escHtml(location)}</div></div>
+        <div class="sd-row"><div class="sd-label">📍 地點</div><div class="sd-value">${escHtml(location)}</div></div>`;
+      }
+      if (task) {
+        detailHtml += `
         <div class="sd-row"><div class="sd-label">📝 內容</div><div class="sd-value">${escHtml(task)}</div></div>`;
       }
       detailHtml += `
@@ -1847,6 +1856,13 @@
       return (Date.now() - dt.getTime()) > 2 * 60 * 60 * 1000; // 2 小時
     }
 
+    // 最後回報是否已超過 4 小時（超過則不顯示在地圖上，但名單仍保留）
+    function isHiddenOnMap(p) {
+      const dt = lastSeenAt(p);
+      if (!dt) return true;
+      return (Date.now() - dt.getTime()) > 4 * 60 * 60 * 1000; // 4 小時
+    }
+
     function offsetOverlap(data) {
       // 偵測重疊座標，加微小偏移
       const seen = {};
@@ -1866,7 +1882,8 @@
 
     // 資料簽章：只有「人/座標/類型/時間」變動才需要重建標記
     function teamSignature(rows) {
-      return rows.map(p => `${p.user_id}|${p.created_at || ''}|${p.gps_latitude}|${p.gps_longitude}|${p.task_type || ''}`).join(';');
+      // 含 stale/hidden 狀態：同事跨過 2h（變灰）/4h（隱藏）門檻時即使原始資料未變也要重建
+      return rows.map(p => `${p.user_id}|${p.created_at || ''}|${p.gps_latitude}|${p.gps_longitude}|${p.task_type || ''}|${isStale(p) ? 1 : 0}${isHiddenOnMap(p) ? 1 : 0}`).join(';');
     }
     function setTeamRefreshLoading(on) {
       const btn = document.getElementById('refresh-team-btn');
@@ -1969,6 +1986,7 @@
           const bounds = [];
           data.forEach(p => {
             if (!p.gps_latitude || !p.gps_longitude) return;
+            if (isHiddenOnMap(p)) return; // 超過 4 小時：地圖不顯示（名單仍保留）
             const marker = buildTeamMarker(p);
             bounds.push(marker.getLatLng());
             teamClusterGroup.addLayer(marker);
@@ -2052,12 +2070,13 @@
         const stale = isStale(p);
         const bg = stale ? '#9e9e9e' : (isMe ? '#4a90d9' : '#06c755');
         const ago = timeAgo(p);
+        const hidden = isHiddenOnMap(p);
         return `
           <div class="tls-row" onclick="locateColleague('${escAttr(p.user_id)}')">
             <div class="tls-avatar" style="background:${bg}">${escHtml((p.display_name || '?')[0])}</div>
             <div class="tls-info">
               <div class="tls-name">${escHtml(p.display_name || '未知')}${isMe ? ' (我)' : ''}</div>
-              <div class="tls-meta">${escHtml(p.task_type || '')}　${escHtml(p.location || '')}</div>
+              <div class="tls-meta">${escHtml(p.task_type || '')}　${escHtml(p.location || '')}${hidden ? '　<span style="color:#bbb">·地圖未顯示</span>' : ''}</div>
             </div>
             <div class="tls-status ${stale ? 'off' : 'on'}">${ago}</div>
           </div>`;
@@ -2067,7 +2086,8 @@
     // 點名單 → 定位到該同事
     function locateColleague(userId) {
       const marker = teamMarkersById[userId];
-      if (!marker || !teamMap) return;
+      if (!teamMap) return;
+      if (!marker) { alert('該同事最後回報已超過 4 小時，地圖上不顯示位置'); return; }
       document.getElementById('team-list-sheet').classList.remove('open');
       if (teamClusterGroup && teamClusterGroup.zoomToShowLayer) {
         teamClusterGroup.zoomToShowLayer(marker, () => { teamMap.setView(marker.getLatLng(), Math.max(teamMap.getZoom(), 16)); marker.openPopup(); });
@@ -2157,9 +2177,12 @@
 
     // ====== 載入我的紀錄 ======
     async function loadMyRecords() {
-      const dateFilter = document.getElementById('filter-date').value;
+      const startDate = document.getElementById('filter-start').value;
+      const endDate = document.getElementById('filter-end').value;
+      if (startDate && endDate && startDate > endDate) { alert('起始日期不能晚於結束日期'); return; }
       let url = '/api/my-reports?limit=100';
-      if (dateFilter) url += '&date=' + dateFilter;
+      if (startDate) url += '&startDate=' + startDate;
+      if (endDate) url += '&endDate=' + endDate;
 
       const listEl = document.getElementById('records-list');
       listEl.innerHTML = '<div class="records-empty">載入中...</div>';
@@ -2213,7 +2236,8 @@
     }
 
     function clearFilter() {
-      document.getElementById('filter-date').value = '';
+      document.getElementById('filter-start').value = '';
+      document.getElementById('filter-end').value = '';
       loadMyRecords();
     }
 
@@ -2225,7 +2249,11 @@
     // ====== 編輯彈窗 ======
     function toggleEditFields() {
       const type = document.getElementById('edit-type').value;
-      document.getElementById('edit-arrive-fields').style.display = type === '離開' ? 'none' : '';
+      // 所有類型皆顯示地點/內容欄位；「離開」標示為選填
+      document.getElementById('edit-arrive-fields').style.display = '';
+      const optional = type === '離開';
+      document.getElementById('edit-label-location').textContent = optional ? '地點（選填）' : '地點';
+      document.getElementById('edit-label-task').textContent = optional ? '處理內容（選填）' : '處理內容';
     }
 
     function openEditModal(id, taskType, location, task) {
