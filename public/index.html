@@ -411,17 +411,15 @@
 
     /* 單人版（代印稽查員）：6 欄，與前台一致 # 日期時間 類型 地點 處理內容 GPS */
     .dr-table.dr-single th:nth-child(1) { width: 4%; }
-    .dr-table.dr-single th:nth-child(2) { width: 8%; }
-    .dr-table.dr-single th:nth-child(3) { width: 8%; }
-    .dr-table.dr-single th:nth-child(4) { width: 9%; }
-    .dr-table.dr-single th:nth-child(5) { width: 9%; }
-    .dr-table.dr-single th:nth-child(6) { width: 10%; }
-    .dr-table.dr-single th:nth-child(7) { width: 16%; }
-    .dr-table.dr-single th:nth-child(8) { width: 24%; }
-    .dr-table.dr-single th:nth-child(9) { width: 12%; }
+    .dr-table.dr-single th:nth-child(2) { width: 9%; }
+    .dr-table.dr-single th:nth-child(3) { width: 10%; }
+    .dr-table.dr-single th:nth-child(4) { width: 12%; }
+    .dr-table.dr-single th:nth-child(5) { width: 11%; }
+    .dr-table.dr-single th:nth-child(6) { width: 17%; }
+    .dr-table.dr-single th:nth-child(7) { width: 25%; }
+    .dr-table.dr-single th:nth-child(8) { width: 12%; }
     .dr-table.dr-single td:nth-child(2), .dr-table.dr-single td:nth-child(3),
-    .dr-table.dr-single td:nth-child(4), .dr-table.dr-single td:nth-child(5),
-    .dr-table.dr-single td:nth-child(6) { white-space: nowrap; }
+    .dr-table.dr-single td:nth-child(4), .dr-table.dr-single td:nth-child(5) { white-space: nowrap; }
 
     /* 頁尾 */
     .dr-footer { margin-top: 14px; text-align: center; font-size: 11px; color: #999; }
@@ -1462,6 +1460,31 @@
       const h = Math.floor(mins / 60), m = mins % 60;
       return m ? `${h} 時 ${m} 分` : `${h} 時`;
     }
+    function gpsDistanceM(a, b) {
+      if (!a || !b || !a.gps_latitude || !b.gps_latitude) return null;
+      const R = 6371000, toRad = d => d * Math.PI / 180;
+      const lat1 = toRad(Number(a.gps_latitude)), lat2 = toRad(Number(b.gps_latitude));
+      const dLat = lat2 - lat1, dLng = toRad(Number(b.gps_longitude) - Number(a.gps_longitude));
+      const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(x));
+    }
+    const FAR_LEAVE_M = 300;
+    function mergeDesc(start, end) {
+      const a = (start && start.task_description) || '';
+      const b = (end && end.task_description) || '';
+      if (a && b && a !== b) return `${a}（離開：${b}）`;
+      return a || b || '-';
+    }
+    function leaveCellHtml(v) {
+      if (!v.end) return '<span style="color:#e65100">未記錄</span>';
+      const t = escHtml(v.end.report_time || '');
+      const dist = gpsDistanceM(v.start, v.end);
+      if (dist != null && dist > FAR_LEAVE_M) {
+        const dtxt = dist >= 1000 ? (dist / 1000).toFixed(1) + ' 公里' : Math.round(dist) + ' 公尺';
+        return `${t} <span title="離開定位與到達相距約 ${dtxt}，可能延遲補登" style="color:#e53935;font-weight:700">⚠️</span>`;
+      }
+      return t;
+    }
 
     function renderDailyReport(startDate, endDate) {
       const data = dailyData;
@@ -1575,7 +1598,7 @@
 
       html += '<div class="dr-subhead">工作明細</div>';
       html += `<table class="dr-table dr-single"><thead>
-        <tr><th>#</th><th>日期</th><th>類型</th><th>進場時間</th><th>離場時間</th><th>停留時間</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
+        <tr><th>#</th><th>日期</th><th>到達</th><th>離開</th><th>停留</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
         </thead><tbody>`;
       const visits = pairVisits(data);
       visits.forEach((v, i) => {
@@ -1584,18 +1607,15 @@
         const gpsSrc = v.start || v.end;
         const gps = gpsSrc.gps_latitude ? `${Number(gpsSrc.gps_latitude).toFixed(5)}<br>${Number(gpsSrc.gps_longitude).toFixed(5)}` : '-';
         const inT = v.start ? escHtml(v.start.report_time || '') : '—';
-        const outT = v.end ? escHtml(v.end.report_time || '') : '<span style="color:#e65100">未記錄</span>';
         const loc = escHtml((v.start && v.start.location) || (v.end && v.end.location) || '-');
-        const desc = escHtml((v.start && v.start.task_description) || (v.end && v.end.task_description) || '-');
         html += `<tr>
           <td>${i + 1}</td>
           <td>${escHtml(mmdd)}</td>
-          <td>${escHtml(v.kind)}</td>
           <td>${inT}</td>
-          <td>${outT}</td>
+          <td>${leaveCellHtml(v)}</td>
           <td>${escHtml(fmtDuration(v.start, v.end))}</td>
           <td>${loc}</td>
-          <td>${desc}</td>
+          <td>${escHtml(mergeDesc(v.start, v.end))}</td>
           <td class="dr-gps">${gps}</td>
         </tr>`;
       });
