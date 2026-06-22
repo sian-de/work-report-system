@@ -2726,24 +2726,9 @@
         `<span>期間：${escHtml(startDate)} ～ ${escHtml(endDate)}</span>` +
         `<span>製表日期：${escHtml(today)}</span>`;
 
-      // 統計卡片
-      document.getElementById('report-stats').innerHTML = `
-        <div class="stat-box highlight"><div class="stat-num">${totalCount}</div><div class="stat-label">總回報筆數</div></div>
-        <div class="stat-box"><div class="stat-num">${reportedDays} / ${dayDiff}</div><div class="stat-label">回報天數 / 總天數</div></div>
-        <div class="stat-box"><div class="stat-num">${typeSorted.length}</div><div class="stat-label">事項類型數</div></div>
-        <div class="stat-box"><div class="stat-num">${totalCount > 0 ? (totalCount / reportedDays).toFixed(1) : 0}</div><div class="stat-label">平均每日筆數</div></div>
-      `;
-
-      // 類型統計長條（無資料時隱藏整塊）
-      const maxCount = typeSorted.length > 0 ? typeSorted[0][1] : 1;
-      document.getElementById('report-typestats-block').style.display = typeSorted.length > 0 ? 'block' : 'none';
-      document.getElementById('report-type-stats').innerHTML = typeSorted.map(([type, count]) => `
-        <div class="type-stat-row">
-          <span style="white-space:nowrap">${escHtml(type)}</span>
-          <div class="type-stat-bar"><div class="type-stat-fill" style="width:${(count/maxCount*100).toFixed(0)}%"></div></div>
-          <span style="font-weight:600;color:#06c755;white-space:nowrap">${count} 筆</span>
-        </div>
-      `).join('');
+      // 不顯示摘要卡片與各類型統計（僅留抬頭 + 工作明細）
+      document.getElementById('report-stats').style.display = 'none';
+      document.getElementById('report-typestats-block').style.display = 'none';
 
       // 明細表格：到達↔離開、隨車上車↔下車 配成一列，含停留時間（保留 GPS）
       document.getElementById('report-detail-head').style.display = 'block';

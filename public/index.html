@@ -1582,12 +1582,6 @@
             <span>期間：${escHtml(rangeDesc)}</span>
             <span>製表日期：${escHtml(now.toLocaleDateString('zh-TW'))}</span>
           </div>
-        </div>
-        <div class="dr-stats">
-          <div class="dr-stat hl"><div class="n">${total}</div><div class="l">總回報筆數</div></div>
-          <div class="dr-stat"><div class="n">${reportedDays}</div><div class="l">回報天數</div></div>
-          <div class="dr-stat"><div class="n">${types}</div><div class="l">事項類型數</div></div>
-          <div class="dr-stat"><div class="n">${total > 0 ? (total / reportedDays).toFixed(1) : 0}</div><div class="l">平均每日筆數</div></div>
         </div>`;
 
       if (total === 0) {
