@@ -410,14 +410,18 @@
     .dr-table th:nth-child(8) { width: 12%; }
 
     /* 單人版（代印稽查員）：6 欄，與前台一致 # 日期時間 類型 地點 處理內容 GPS */
-    .dr-table.dr-single th:nth-child(1) { width: 5%; }
-    .dr-table.dr-single th:nth-child(2) { width: 11%; }
-    .dr-table.dr-single th:nth-child(3) { width: 10%; }
-    .dr-table.dr-single th:nth-child(4) { width: 18%; }
-    .dr-table.dr-single th:nth-child(5) { width: 44%; }
-    .dr-table.dr-single th:nth-child(6) { width: 12%; }
-    .dr-table .dr-dt { white-space: nowrap; line-height: 1.5; }
-    .dr-table .dr-dt .dr-dt-time { color: #888; font-size: 12px; }
+    .dr-table.dr-single th:nth-child(1) { width: 4%; }
+    .dr-table.dr-single th:nth-child(2) { width: 8%; }
+    .dr-table.dr-single th:nth-child(3) { width: 8%; }
+    .dr-table.dr-single th:nth-child(4) { width: 9%; }
+    .dr-table.dr-single th:nth-child(5) { width: 9%; }
+    .dr-table.dr-single th:nth-child(6) { width: 10%; }
+    .dr-table.dr-single th:nth-child(7) { width: 16%; }
+    .dr-table.dr-single th:nth-child(8) { width: 24%; }
+    .dr-table.dr-single th:nth-child(9) { width: 12%; }
+    .dr-table.dr-single td:nth-child(2), .dr-table.dr-single td:nth-child(3),
+    .dr-table.dr-single td:nth-child(4), .dr-table.dr-single td:nth-child(5),
+    .dr-table.dr-single td:nth-child(6) { white-space: nowrap; }
 
     /* 頁尾 */
     .dr-footer { margin-top: 14px; text-align: center; font-size: 11px; color: #999; }
@@ -1431,6 +1435,34 @@
       } catch (err) { toast('網路錯誤', 'error'); }
     }
 
+    // 將「到達↔離開、隨車上車↔下車」配成一列「訪點」（含未配對的孤兒）
+    function pairVisits(reports) {
+      const key = r => r.report_date + ' ' + (r.report_time || '');
+      const sorted = [...reports].sort((a, b) => key(a).localeCompare(key(b)));
+      const visits = [];
+      const openArr = [], openRide = [];
+      for (const r of sorted) {
+        const t = r.task_type;
+        if (t === '到達') { visits.push({ kind: '到達', start: r, end: null }); openArr.push(visits.length - 1); }
+        else if (t === '隨車(上車)') { visits.push({ kind: '隨車', start: r, end: null }); openRide.push(visits.length - 1); }
+        else if (t === '離開') { if (openArr.length) visits[openArr.pop()].end = r; else visits.push({ kind: '到達', start: null, end: r }); }
+        else if (t === '隨車(下車)') { if (openRide.length) visits[openRide.pop()].end = r; else visits.push({ kind: '隨車', start: null, end: r }); }
+        else { visits.push({ kind: t || '其他', start: r, end: null }); }
+      }
+      const refKey = v => key(v.start || v.end);
+      return visits.sort((a, b) => refKey(a).localeCompare(refKey(b)));
+    }
+    function fmtDuration(start, end) {
+      if (!start || !end) return '—';
+      const s = new Date(start.report_date + 'T' + (start.report_time || '00:00') + ':00');
+      const e = new Date(end.report_date + 'T' + (end.report_time || '00:00') + ':00');
+      let mins = Math.round((e - s) / 60000);
+      if (isNaN(mins) || mins < 0) return '—';
+      if (mins < 60) return mins + ' 分';
+      const h = Math.floor(mins / 60), m = mins % 60;
+      return m ? `${h} 時 ${m} 分` : `${h} 時`;
+    }
+
     function renderDailyReport(startDate, endDate) {
       const data = dailyData;
       const rangeDesc = startDate === endDate ? startDate : `${startDate} ～ ${endDate}`;
@@ -1543,25 +1575,27 @@
 
       html += '<div class="dr-subhead">工作明細</div>';
       html += `<table class="dr-table dr-single"><thead>
-        <tr><th>#</th><th>日期時間</th><th>類型</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
+        <tr><th>#</th><th>日期</th><th>類型</th><th>進場時間</th><th>離場時間</th><th>停留時間</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
         </thead><tbody>`;
-      let lastDate = '';
-      let rowNum = 0;
-      data.forEach(r => {
-        if (r.report_date !== lastDate) {
-          lastDate = r.report_date;
-          const c = data.filter(d => d.report_date === lastDate).length;
-          html += `<tr class="dr-date-row"><td colspan="6">${escHtml(lastDate)}（${c} 筆）</td></tr>`;
-        }
-        rowNum++;
-        const mmdd = (r.report_date || '').slice(5).replace('-', '/');
-        const gps = r.gps_latitude ? `${Number(r.gps_latitude).toFixed(5)}<br>${Number(r.gps_longitude).toFixed(5)}` : '-';
+      const visits = pairVisits(data);
+      visits.forEach((v, i) => {
+        const ref = v.start || v.end;
+        const mmdd = (ref.report_date || '').slice(5).replace('-', '/');
+        const gpsSrc = v.start || v.end;
+        const gps = gpsSrc.gps_latitude ? `${Number(gpsSrc.gps_latitude).toFixed(5)}<br>${Number(gpsSrc.gps_longitude).toFixed(5)}` : '-';
+        const inT = v.start ? escHtml(v.start.report_time || '') : '—';
+        const outT = v.end ? escHtml(v.end.report_time || '') : '<span style="color:#e65100">未記錄</span>';
+        const loc = escHtml((v.start && v.start.location) || (v.end && v.end.location) || '-');
+        const desc = escHtml((v.start && v.start.task_description) || (v.end && v.end.task_description) || '-');
         html += `<tr>
-          <td>${rowNum}</td>
-          <td class="dr-dt">${escHtml(mmdd)}<br><span class="dr-dt-time">${escHtml(r.report_time || '')}</span></td>
-          <td>${escHtml(r.task_type || '')}</td>
-          <td>${escHtml(r.location || '-')}</td>
-          <td>${escHtml(r.task_description || '-')}</td>
+          <td>${i + 1}</td>
+          <td>${escHtml(mmdd)}</td>
+          <td>${escHtml(v.kind)}</td>
+          <td>${inT}</td>
+          <td>${outT}</td>
+          <td>${escHtml(fmtDuration(v.start, v.end))}</td>
+          <td>${loc}</td>
+          <td>${desc}</td>
           <td class="dr-gps">${gps}</td>
         </tr>`;
       });
