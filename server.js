@@ -696,9 +696,16 @@ app.get('/api/user-today', requireAuth, async (req, res) => {
       sql: 'SELECT COUNT(*) as c FROM reports WHERE user_id = ? AND report_date = ?',
       args: [userId, tw.date],
     });
-    res.json({ count: result.rows[0].c });
+    // 今日最後一筆回報：供前端判斷「到達但未記錄離開」並提醒補登
+    const lastR = await db.execute({
+      sql: `SELECT task_type, location, report_time, created_at
+            FROM reports WHERE user_id = ? AND report_date = ?
+            ORDER BY created_at DESC LIMIT 1`,
+      args: [userId, tw.date],
+    });
+    res.json({ count: result.rows[0].c, last: lastR.rows[0] || null });
   } catch (err) {
-    res.json({ count: 0 });
+    res.json({ count: 0, last: null });
   }
 });
 
