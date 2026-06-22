@@ -583,21 +583,19 @@
       font-weight: 600;
       white-space: nowrap;
     }
-    /* 欄寬分配：# 日期 類型 進場 離場 停留 地點 處理內容 GPS */
+    /* 欄寬分配：# 日期 到達 離開 停留 地點 處理內容 GPS */
     .report-table th:nth-child(1) { width: 4%; }
-    .report-table th:nth-child(2) { width: 8%; }
-    .report-table th:nth-child(3) { width: 8%; }
-    .report-table th:nth-child(4) { width: 9%; }
-    .report-table th:nth-child(5) { width: 9%; }
-    .report-table th:nth-child(6) { width: 10%; }
-    .report-table th:nth-child(7) { width: 16%; }
-    .report-table th:nth-child(8) { width: 24%; }
-    .report-table th:nth-child(9) { width: 12%; }
+    .report-table th:nth-child(2) { width: 9%; }
+    .report-table th:nth-child(3) { width: 10%; }
+    .report-table th:nth-child(4) { width: 12%; }
+    .report-table th:nth-child(5) { width: 11%; }
+    .report-table th:nth-child(6) { width: 17%; }
+    .report-table th:nth-child(7) { width: 25%; }
+    .report-table th:nth-child(8) { width: 12%; }
     .report-table td { white-space: normal; }
-    /* 日期/類型/進場/離場/停留 不換行，保持整齊 */
+    /* 日期/到達/離開/停留 不換行，保持整齊 */
     .report-table td:nth-child(2), .report-table td:nth-child(3),
-    .report-table td:nth-child(4), .report-table td:nth-child(5),
-    .report-table td:nth-child(6) { white-space: nowrap; }
+    .report-table td:nth-child(4), .report-table td:nth-child(5) { white-space: nowrap; }
     .report-table .gps-cell { font-size: 10px; color: #999; line-height: 1.5; white-space: nowrap; }
     .report-table td {
       padding: 9px 8px;
@@ -693,14 +691,13 @@
       .print-area .report-table th { background: #333 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 6px 5px; font-size: 10px; }
       .print-area .report-table td { padding: 5px 5px; font-size: 10px; word-wrap: break-word; overflow-wrap: break-word; }
       .print-area .report-table th:nth-child(1) { width: 4%; }
-      .print-area .report-table th:nth-child(2) { width: 8%; }
-      .print-area .report-table th:nth-child(3) { width: 8%; }
-      .print-area .report-table th:nth-child(4) { width: 9%; }
-      .print-area .report-table th:nth-child(5) { width: 9%; }
-      .print-area .report-table th:nth-child(6) { width: 10%; }
-      .print-area .report-table th:nth-child(7) { width: 16%; }
-      .print-area .report-table th:nth-child(8) { width: 24%; }
-      .print-area .report-table th:nth-child(9) { width: 12%; }
+      .print-area .report-table th:nth-child(2) { width: 9%; }
+      .print-area .report-table th:nth-child(3) { width: 10%; }
+      .print-area .report-table th:nth-child(4) { width: 12%; }
+      .print-area .report-table th:nth-child(5) { width: 11%; }
+      .print-area .report-table th:nth-child(6) { width: 17%; }
+      .print-area .report-table th:nth-child(7) { width: 25%; }
+      .print-area .report-table th:nth-child(8) { width: 12%; }
       .print-area .report-table .gps-cell { font-size: 8px; color: #666; }
       .no-print { display: none !important; }
     }
@@ -2665,6 +2662,37 @@
       return m ? `${h} 時 ${m} 分` : `${h} 時`;
     }
 
+    // 兩點 GPS 距離（公尺），任一無座標回傳 null
+    function gpsDistanceM(a, b) {
+      if (!a || !b || !a.gps_latitude || !b.gps_latitude) return null;
+      const R = 6371000, toRad = d => d * Math.PI / 180;
+      const lat1 = toRad(Number(a.gps_latitude)), lat2 = toRad(Number(b.gps_latitude));
+      const dLat = lat2 - lat1, dLng = toRad(Number(b.gps_longitude) - Number(a.gps_longitude));
+      const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(x));
+    }
+    const FAR_LEAVE_M = 300; // 離開定位與到達相距超過此距離 → 標註可能延遲補登
+
+    // 合併到達/離開的處理內容（離開現可選填；兩者都有則並陳）
+    function mergeDesc(start, end) {
+      const a = (start && start.task_description) || '';
+      const b = (end && end.task_description) || '';
+      if (a && b && a !== b) return `${a}（離開：${b}）`;
+      return a || b || '-';
+    }
+
+    // 離開時間欄（含延遲補登 ⚠️ 標註）
+    function leaveCellHtml(v) {
+      if (!v.end) return '<span style="color:#e65100">未記錄</span>';
+      const t = escHtml(v.end.report_time || '');
+      const dist = gpsDistanceM(v.start, v.end);
+      if (dist != null && dist > FAR_LEAVE_M) {
+        const dtxt = dist >= 1000 ? (dist / 1000).toFixed(1) + ' 公里' : Math.round(dist) + ' 公尺';
+        return `${t} <span title="離開定位與到達相距約 ${dtxt}，可能延遲補登" style="color:#e53935;font-weight:700">⚠️</span>`;
+      }
+      return t;
+    }
+
     function renderReport(startDate, endDate) {
       const data = reportData;
       const totalCount = data.length;
@@ -2720,7 +2748,7 @@
       // 明細表格：到達↔離開、隨車上車↔下車 配成一列，含停留時間（保留 GPS）
       document.getElementById('report-detail-head').style.display = 'block';
       document.getElementById('report-thead').innerHTML = `
-        <tr><th>#</th><th>日期</th><th>類型</th><th>進場時間</th><th>離場時間</th><th>停留時間</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
+        <tr><th>#</th><th>日期</th><th>到達</th><th>離開</th><th>停留</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
       `;
 
       const visits = pairVisits(data);
@@ -2731,24 +2759,21 @@
         const gpsSrc = v.start || v.end;
         const gps = gpsSrc.gps_latitude ? `${Number(gpsSrc.gps_latitude).toFixed(5)}<br>${Number(gpsSrc.gps_longitude).toFixed(5)}` : '-';
         const inT = v.start ? escHtml(v.start.report_time || '') : '—';
-        const outT = v.end ? escHtml(v.end.report_time || '') : '<span style="color:#e65100">未記錄</span>';
         const loc = escHtml((v.start && v.start.location) || (v.end && v.end.location) || '-');
-        const desc = escHtml((v.start && v.start.task_description) || (v.end && v.end.task_description) || '-');
         tbodyHtml += `<tr>
           <td>${i + 1}</td>
           <td>${escHtml(mmdd)}</td>
-          <td>${escHtml(v.kind)}</td>
           <td>${inT}</td>
-          <td>${outT}</td>
+          <td>${leaveCellHtml(v)}</td>
           <td>${escHtml(fmtDuration(v.start, v.end))}</td>
           <td>${loc}</td>
-          <td>${desc}</td>
+          <td>${escHtml(mergeDesc(v.start, v.end))}</td>
           <td class="gps-cell">${gps}</td>
         </tr>`;
       });
 
       if (totalCount === 0) {
-        tbodyHtml = '<tr><td colspan="9" style="text-align:center;padding:30px;color:#999">此期間無回報紀錄</td></tr>';
+        tbodyHtml = '<tr><td colspan="8" style="text-align:center;padding:30px;color:#999">此期間無回報紀錄</td></tr>';
       }
 
       document.getElementById('report-tbody').innerHTML = tbodyHtml;
