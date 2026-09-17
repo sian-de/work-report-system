@@ -1028,12 +1028,19 @@
       loadSummary();
       loadReports();
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-      autoRefreshTimer = setInterval(() => {
-        if (currentTab !== 'reports') return; // 僅在回報紀錄頁籤檢查
-        loadSummary();
-        checkNewReports(); // 不重繪列表，只在有新回報時提示
-      }, 30000);
+      autoRefreshTimer = setInterval(autoRefreshTick, 60000);
     }
+
+    // 自動更新：僅在回報紀錄頁籤、且頁面可見時查詢（背景分頁不打 API）
+    function autoRefreshTick() {
+      if (currentTab !== 'reports' || document.hidden || !authToken) return;
+      loadSummary();
+      checkNewReports(); // 不重繪列表，只在有新回報時提示
+    }
+    // 切回頁面時立即補查一次，不必等下一輪
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && autoRefreshTimer) autoRefreshTick();
+    });
 
     // 載入篩選下拉選項（公司/組別/類型），只做一次
     let reportFiltersReady = false;
@@ -1221,7 +1228,7 @@
     // 自動檢查（不重繪列表）：total 變動才提示
     async function checkNewReports() {
       const params = reportFilterParams();
-      params.append('page', 1); params.append('limit', 1);
+      params.append('countOnly', 1); // 只查總筆數
       try {
         const res = await fetch('/api/reports?' + params, { headers: authHeaders() });
         if (!res.ok) return;

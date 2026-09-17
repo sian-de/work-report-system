@@ -65,6 +65,10 @@ async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_reports_user ON reports(user_id);
     CREATE INDEX IF NOT EXISTS idx_reports_report_date ON reports(report_date);
     CREATE INDEX IF NOT EXISTS idx_supcomp_user ON supervisor_companies(user_id);
+    -- 人員＋日期：my-reports / today-count / 狀態板今日筆數（user_id + report_date 條件）
+    CREATE INDEX IF NOT EXISTS idx_reports_user_date ON reports(user_id, report_date);
+    -- 人員＋建立時間：同事最後位置 / 狀態板每人最後一筆（依 user_id 取 created_at 最新）
+    CREATE INDEX IF NOT EXISTS idx_reports_user_created ON reports(user_id, created_at);
   `);
 
   // 以 ALTER 補欄位（相容既有資料表）；欄位已存在則忽略錯誤。

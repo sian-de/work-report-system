@@ -145,6 +145,49 @@ test('回報篩選：未來日期區間回 0 筆；類型篩選有效', async ()
   assert.ok(Array.isArray(arrive.typeCounts) && Array.isArray(arrive.companyCounts), '應回傳小計');
 });
 
+test('新回報檢查：countOnly=1 只回總筆數，且與完整查詢一致並套用範圍', async () => {
+  const full = (await api('GET', '/api/reports?limit=0', { token: adminToken })).data;
+  const cnt = await api('GET', '/api/reports?countOnly=1', { token: adminToken });
+  assert.equal(cnt.status, 200);
+  assert.deepEqual(Object.keys(cnt.data), ['total'], '應只回 total');
+  assert.equal(cnt.data.total, full.total);
+  const tSupA = await login('t_supA', 'test1234');
+  const supFull = (await api('GET', '/api/reports?limit=0', { token: tSupA })).data;
+  assert.equal((await api('GET', '/api/reports?countOnly=1', { token: tSupA })).data.total, supFull.total, '主管範圍內筆數一致');
+  const future = (await api('GET', '/api/reports?countOnly=1&startDate=2099-01-01', { token: adminToken })).data;
+  assert.equal(future.total, 0, '篩選條件應生效');
+});
+
+test('同事最後位置：每人只取最新一筆有 GPS 的回報，並依公司隔離', async () => {
+  const tA = await login('t_empA', 'test1234');
+  // 較新的有 GPS 回報 → 應成為最後位置
+  await api('POST', '/api/submit-report', { token: tA, body: { taskType: '到達', location: '台北A2', task: '測試A2', latitude: 25.05, longitude: 121.52 } });
+  // 最新但無 GPS 的回報 → 不應覆蓋最後位置
+  await api('POST', '/api/submit-report', { token: tA, body: { taskType: '到達', location: '無GPS', task: 'x' } });
+
+  const all = (await api('GET', '/api/last-locations', { token: adminToken })).data;
+  const empARows = all.filter(r => r.user_id === 't_empA');
+  assert.equal(empARows.length, 1, '每人只一筆');
+  assert.equal(empARows[0].location, '台北A2');
+  assert.ok(all.some(r => r.user_id === 't_empB'), '管理員看得到其他公司');
+
+  const mine = (await api('GET', '/api/last-locations', { token: tA })).data;
+  assert.ok(mine.some(r => r.user_id === 't_empA'));
+  assert.ok(!mine.some(r => r.user_id === 't_empB'), '稽查員不應看到他公司同事');
+
+  const supB = (await api('GET', '/api/last-locations', { token: await login('t_supB', 'test1234') })).data;
+  assert.ok(supB.some(r => r.user_id === 't_empB') && !supB.some(r => r.user_id === 't_empA'), '主管只看管轄公司');
+});
+
+test('狀態板：最後回報取最新一筆（不論有無 GPS），同秒多筆不重複', async () => {
+  const r = await api('GET', '/api/status-board', { token: adminToken });
+  assert.equal(r.status, 200);
+  const empA = r.data.users.filter(u => u.user_id === 't_empA');
+  assert.equal(empA.length, 1, '每人只一筆');
+  assert.equal(empA[0].last_report.location, '無GPS', '應為最新一筆回報');
+  assert.equal(empA[0].today_count, 3);
+});
+
 test('刪除仍有人員的公司 → 400', async () => {
   assert.equal((await api('DELETE', '/api/companies/' + A, { token: adminToken })).status, 400);
 });
