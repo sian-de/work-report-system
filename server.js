@@ -106,7 +106,7 @@ setInterval(() => {
   for (const [key, val] of sessions) {
     if (now - val.createdAt > 24 * 60 * 60 * 1000) sessions.delete(key);
   }
-}, 10 * 60 * 1000);
+}, 10 * 60 * 1000).unref(); // unref：不讓計時器阻止程序結束（測試跑完可正常退出；正式環境由 HTTP server 維持運作）
 
 // 驗證中間件
 function requireAuth(req, res, next) {
@@ -199,7 +199,7 @@ setInterval(() => {
   for (const [key, val] of apiCache) {
     if (now - val.time > 300000) apiCache.delete(key); // 5 分鐘最大存活
   }
-}, 60000);
+}, 60000).unref();
 
 // ====== 靜態檔案（含快取標頭）======
 const PUBLIC_DIR = path.join(__dirname, 'public');
