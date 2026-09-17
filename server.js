@@ -744,6 +744,13 @@ app.get('/api/reports', requireAuth, async (req, res) => {
   try {
     const { where, params } = await buildReportFilter(req);
 
+    // countOnly=1：後台「新回報檢查」只需總筆數，略過明細與小計查詢（4 條 → 1 條）。
+    // 篩選條件只用 r.* 欄位，且 JOIN 的 users/companies/groups 皆以主鍵對應不會放大筆數，故可不 JOIN。
+    if (String(req.query.countOnly) === '1') {
+      const cnt = await db.execute({ sql: `SELECT COUNT(*) as total FROM reports r${where}`, args: params });
+      return res.json({ total: cnt.rows[0].total });
+    }
+
     const countResult = await db.execute({ sql: `SELECT COUNT(*) as total${REPORT_JOINS}${where}`, args: params });
     const total = countResult.rows[0].total;
 
@@ -1061,17 +1068,20 @@ app.get('/api/last-locations', requireAuth, async (req, res) => {
         params.push(scope.userId);
       }
     }
+    // 以人員為主，每人只取最新一筆有 GPS 的回報（走 idx_reports_user_created），
+    // 不再對全部歷史回報 GROUP BY。
+    const uclause = clause.replace('r.user_id', 'u.user_id');
     const result = await db.execute({
       sql: `SELECT r.user_id, r.display_name, r.report_date, r.report_time,
               r.location, r.task_type, r.gps_latitude, r.gps_longitude, r.created_at
-            FROM reports r
-            INNER JOIN (
-              SELECT user_id, MAX(created_at) as max_created
-              FROM reports
-              WHERE gps_latitude IS NOT NULL
-              GROUP BY user_id
-            ) latest ON r.user_id = latest.user_id AND r.created_at = latest.max_created
-            WHERE r.gps_latitude IS NOT NULL${clause}
+            FROM users u
+            JOIN reports r ON r.id = (
+              SELECT id FROM reports
+              WHERE user_id = u.user_id AND gps_latitude IS NOT NULL
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            )
+            WHERE 1=1${uclause}
             ORDER BY r.display_name`,
       args: [...params],
     });
