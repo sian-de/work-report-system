@@ -1126,14 +1126,19 @@ app.get('/api/status-board', requireAuth, async (req, res) => {
       });
       for (const row of counts.rows) todayCountMap.set(row.user_id, row.c);
 
-      // 每人最後一筆回報（window function 一次取回）
+      // 每人最後一筆回報：以人員為主逐人取最新一筆（走 idx_reports_user_created），
+      // 不再用 window function 掃過每人全部歷史回報。同秒多筆以 id 決勝。
       const lasts = await db.execute({
-        sql: `SELECT user_id, report_date, report_time, task_type, location,
-                task_description, gps_latitude, gps_longitude
-              FROM (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn
-                FROM reports WHERE user_id IN (${placeholders})
-              ) WHERE rn = 1`,
+        sql: `SELECT r.user_id, r.report_date, r.report_time, r.task_type, r.location,
+                r.task_description, r.gps_latitude, r.gps_longitude
+              FROM users u
+              JOIN reports r ON r.id = (
+                SELECT id FROM reports
+                WHERE user_id = u.user_id
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+              )
+              WHERE u.user_id IN (${placeholders})`,
         args: [...userIds],
       });
       for (const row of lasts.rows) lastReportMap.set(row.user_id, row);

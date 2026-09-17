@@ -179,6 +179,15 @@ test('同事最後位置：每人只取最新一筆有 GPS 的回報，並依公
   assert.ok(supB.some(r => r.user_id === 't_empB') && !supB.some(r => r.user_id === 't_empA'), '主管只看管轄公司');
 });
 
+test('狀態板：最後回報取最新一筆（不論有無 GPS），同秒多筆不重複', async () => {
+  const r = await api('GET', '/api/status-board', { token: adminToken });
+  assert.equal(r.status, 200);
+  const empA = r.data.users.filter(u => u.user_id === 't_empA');
+  assert.equal(empA.length, 1, '每人只一筆');
+  assert.equal(empA[0].last_report.location, '無GPS', '應為最新一筆回報');
+  assert.equal(empA[0].today_count, 3);
+});
+
 test('刪除仍有人員的公司 → 400', async () => {
   assert.equal((await api('DELETE', '/api/companies/' + A, { token: adminToken })).status, 400);
 });
