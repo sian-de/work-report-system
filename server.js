@@ -12,6 +12,9 @@ const app = express();
 
 // 安全標頭（CSP、X-Frame-Options 等）
 app.use(helmet({
+  // OpenStreetMap 圖磚規範要求請求帶 Referer；helmet 預設 no-referrer 會被擋（403 Access blocked）。
+  // 跨網域只送出來源網址（origin），不含路徑與參數。
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],

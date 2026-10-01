@@ -208,3 +208,8 @@ test('60 秒內重複送出「離開」只記一筆；中間有到達則不算�
   assert.equal(leave2.data.duplicate, undefined);
   assert.equal(await count(), 4, '新到達之後的離開要正常記錄');
 });
+
+test('Referrer-Policy 需帶來源（OSM 圖磚要求 Referer，否則 403）', async () => {
+  const res = await fetch(base + '/api/health');
+  assert.equal(res.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+});
