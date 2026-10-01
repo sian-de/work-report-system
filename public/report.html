@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#06c755">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -661,6 +661,23 @@
       font-size: 11px;
       color: #999;
     }
+
+
+    /* Toast 通知（取代 alert，與後台一致）*/
+    #toast-container {
+      position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 12px; right: 12px; z-index: 400;
+      display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
+    }
+    .toast {
+      background: #333; color: #fff; padding: 12px 18px; border-radius: 10px;
+      font-size: 14px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+      opacity: 0; transform: translateY(-10px); transition: opacity .25s, transform .25s;
+      max-width: 420px; word-break: break-word; text-align: center;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast-success { background: #06c755; }
+    .toast-error { background: #e53935; }
+    .toast-info { background: #4a90d9; }
 
     /* 列印樣式 */
     @page {
@@ -1443,6 +1460,18 @@
   </div>
 
   <script>
+    // ====== Toast 通知（取代 alert）======
+    function toast(msg, type = 'info') {
+      let c = document.getElementById('toast-container');
+      if (!c) { c = document.createElement('div'); c.id = 'toast-container'; c.setAttribute('role', 'status'); c.setAttribute('aria-live', 'polite'); document.body.appendChild(c); }
+      const t = document.createElement('div');
+      t.className = 'toast toast-' + type;
+      t.textContent = msg;
+      c.appendChild(t);
+      requestAnimationFrame(() => t.classList.add('show'));
+      setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3200);
+    }
+
     let gpsLat = null, gpsLng = null, selectedType = '';
     let gpsMap = null, gpsMarker = null, gpsCircle = null;
     let gpsAt = null, gpsAccuracy = null, gpsMapShown = false;
@@ -1782,7 +1811,7 @@
           body: JSON.stringify({ taskType: '離開', location: '', task: '', latitude: gpsLat, longitude: gpsLng }),
         });
         if (res.status === 401) { doLogout(); return; }
-        if (!res.ok) { alert('記錄離開失敗，請重試'); return; }
+        if (!res.ok) { toast('記錄離開失敗，請重試', 'error'); return; }
         lastTodayReport = { task_type: '離開' };
         leaveReminderDismissed = false;
         const el = document.getElementById('leave-reminder');
@@ -1793,7 +1822,7 @@
         }
         loadTodayCount();
       } catch (e) {
-        alert('網路錯誤，請重試');
+        toast('網路錯誤，請重試', 'error');
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = '一鍵記錄離開'; }
       }
@@ -1935,13 +1964,13 @@
         const data = await res.json();
         if (!res.ok) {
           if (res.status === 401) { doLogout(); return; }
-          alert(data.error || '送出失敗');
+          toast(data.error || '送出失敗', 'error');
           btn.disabled = false; btn.textContent = '送出回報';
           return;
         }
         showSuccessScreen(location, task);
       } catch (e) {
-        alert('網路錯誤，請重試');
+        toast('網路錯誤，請重試', 'error');
         btn.disabled = false; btn.textContent = '送出回報';
       }
     }
@@ -2337,7 +2366,7 @@
     function locateColleague(userId) {
       const marker = teamMarkersById[userId];
       if (!teamMap) return;
-      if (!marker) { alert('該同事最後回報已超過 4 小時，地圖上不顯示位置'); return; }
+      if (!marker) { toast('該同事最後回報已超過 4 小時，地圖上不顯示位置', 'info'); return; }
       document.getElementById('team-list-sheet').classList.remove('open');
       if (teamClusterGroup && teamClusterGroup.zoomToShowLayer) {
         teamClusterGroup.zoomToShowLayer(marker, () => { teamMap.setView(marker.getLatLng(), Math.max(teamMap.getZoom(), 16)); marker.openPopup(); });
@@ -2357,9 +2386,9 @@
         const res = await fetch('/api/trajectory?userId=' + encodeURIComponent(userId) + '&date=' + today, {
           headers: { 'Authorization': 'Bearer ' + authToken },
         });
-        if (!res.ok) { alert('查詢軌跡失敗'); return; }
+        if (!res.ok) { toast('查詢軌跡失敗', 'error'); return; }
         const pts = (await res.json()).filter(p => p.gps_latitude && p.gps_longitude);
-        if (pts.length === 0) { alert('今日尚無軌跡資料'); return; }
+        if (pts.length === 0) { toast('今日尚無軌跡資料', 'info'); return; }
 
         clearTrajectory();
         const latlngs = pts.map(p => [Number(p.gps_latitude), Number(p.gps_longitude)]);
@@ -2374,7 +2403,7 @@
         teamMap.closePopup();
         teamMap.fitBounds(latlngs, { padding: [50, 50], maxZoom: 16 });
         document.getElementById('clear-traj-btn').style.display = '';
-      } catch (e) { alert('網路錯誤'); }
+      } catch (e) { toast('網路錯誤', 'error'); }
     }
 
     function clearTrajectory() {
@@ -2429,7 +2458,7 @@
     async function loadMyRecords() {
       const startDate = document.getElementById('filter-start').value;
       const endDate = document.getElementById('filter-end').value;
-      if (startDate && endDate && startDate > endDate) { alert('起始日期不能晚於結束日期'); return; }
+      if (startDate && endDate && startDate > endDate) { toast('起始日期不能晚於結束日期', 'error'); return; }
       let url = '/api/my-reports?limit=100';
       if (startDate) url += '&startDate=' + startDate;
       if (endDate) url += '&endDate=' + endDate;
@@ -2527,7 +2556,7 @@
       const location = document.getElementById('edit-location').value.trim();
       const task = document.getElementById('edit-task').value.trim();
 
-      if (taskType !== '離開' && (!location || !task)) { alert('地點和處理內容不能為空'); return; }
+      if (taskType !== '離開' && (!location || !task)) { toast('地點和處理內容不能為空', 'error'); return; }
 
       const btn = document.getElementById('edit-save-btn');
       btn.disabled = true;
@@ -2543,11 +2572,11 @@
         });
         if (res.status === 401) { doLogout(); return; }
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '修改失敗'); btn.disabled = false; return; }
+        if (!res.ok) { toast(data.error || '修改失敗', 'error'); btn.disabled = false; return; }
         closeEditModal();
         loadMyRecords();
       } catch (e) {
-        alert('網路錯誤，請重試');
+        toast('網路錯誤，請重試', 'error');
       }
       btn.disabled = false;
     }
@@ -2574,12 +2603,12 @@
         });
         if (res.status === 401) { doLogout(); return; }
         const data = await res.json();
-        if (!res.ok) { alert(data.error || '刪除失敗'); btn.disabled = false; return; }
+        if (!res.ok) { toast(data.error || '刪除失敗', 'error'); btn.disabled = false; return; }
         closeDeleteConfirm();
         loadMyRecords();
         loadTodayCount();
       } catch (e) {
-        alert('網路錯誤，請重試');
+        toast('網路錯誤，請重試', 'error');
       }
       btn.disabled = false;
     }
@@ -2607,8 +2636,8 @@
     async function generateReport() {
       const startDate = document.getElementById('report-start').value;
       const endDate = document.getElementById('report-end').value;
-      if (!startDate || !endDate) { alert('請選擇起訖日期'); return; }
-      if (startDate > endDate) { alert('起始日期不能大於結束日期'); return; }
+      if (!startDate || !endDate) { toast('請選擇起訖日期', 'error'); return; }
+      if (startDate > endDate) { toast('起始日期不能大於結束日期', 'error'); return; }
 
       const previewEl = document.getElementById('report-preview');
       previewEl.classList.add('show');
@@ -2771,7 +2800,7 @@
 
     function printReport() {
       if (reportData.length === 0 && !document.getElementById('report-preview').classList.contains('show')) {
-        alert('請先產生報表再列印');
+        toast('請先產生報表再列印', 'error');
         return;
       }
       window.print();
@@ -2780,10 +2809,10 @@
     function exportReportExcel() {
       const startDate = document.getElementById('report-start').value;
       const endDate = document.getElementById('report-end').value;
-      if (!startDate || !endDate) { alert('請先選擇日期區間'); return; }
+      if (!startDate || !endDate) { toast('請先選擇日期區間', 'error'); return; }
 
       if (reportData.length === 0) {
-        alert('請先產生報表，或此期間無資料');
+        toast('請先產生報表，或此期間無資料', 'error');
         return;
       }
 

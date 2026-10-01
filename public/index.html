@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>工作動態回報系統 - 管理後台</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -418,6 +418,17 @@
     .dr-table.dr-single th:nth-child(6) { width: 17%; }
     .dr-table.dr-single th:nth-child(7) { width: 25%; }
     .dr-table.dr-single th:nth-child(8) { width: 12%; }
+    /* 多人版（配對列）：姓名 公司 組別 到達 離開 停留 地點 處理內容 GPS */
+    .dr-table.dr-multi th:nth-child(1) { width: 8%; }
+    .dr-table.dr-multi th:nth-child(2) { width: 9%; }
+    .dr-table.dr-multi th:nth-child(3) { width: 8%; }
+    .dr-table.dr-multi th:nth-child(4) { width: 7%; }
+    .dr-table.dr-multi th:nth-child(5) { width: 9%; }
+    .dr-table.dr-multi th:nth-child(6) { width: 8%; }
+    .dr-table.dr-multi th:nth-child(7) { width: 14%; }
+    .dr-table.dr-multi th:nth-child(8) { width: 23%; }
+    .dr-table.dr-multi th:nth-child(9) { width: 14%; }
+    .dr-table.dr-multi td:nth-child(4), .dr-table.dr-multi td:nth-child(5), .dr-table.dr-multi td:nth-child(6) { white-space: nowrap; }
     .dr-table.dr-single td:nth-child(2), .dr-table.dr-single td:nth-child(3),
     .dr-table.dr-single td:nth-child(4), .dr-table.dr-single td:nth-child(5) { white-space: nowrap; }
 
@@ -1542,25 +1553,38 @@
       }
 
       html += '<div class="dr-subhead">工作明細</div>';
-      html += `<table class="dr-table"><thead>
-        <tr><th>時間</th><th>姓名</th><th>公司</th><th>組別</th><th>類型</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
+      html += `<table class="dr-table dr-multi"><thead>
+        <tr><th>姓名</th><th>公司</th><th>組別</th><th>到達</th><th>離開</th><th>停留</th><th>地點</th><th>處理內容</th><th>GPS</th></tr>
         </thead><tbody>`;
+      // 依人員分別配對「到達↔離開」，再依日期＋到達時間排序
+      const byUser = new Map();
+      data.forEach(r => { const k = r.user_id || r.display_name; (byUser.get(k) || byUser.set(k, []).get(k)).push(r); });
+      const visits = [];
+      byUser.forEach(list => pairVisits(list).forEach(v => visits.push({ v, ref: v.start || v.end })));
+      visits.sort((x, y) =>
+        (x.ref.report_date || '').localeCompare(y.ref.report_date || '') ||
+        (x.ref.report_time || '').localeCompare(y.ref.report_time || '') ||
+        (x.ref.display_name || '').localeCompare(y.ref.display_name || '', 'zh-Hant'));
+      const perDate = {};
+      visits.forEach(o => { perDate[o.ref.report_date] = (perDate[o.ref.report_date] || 0) + 1; });
       let lastDate = '';
-      data.forEach(r => {
-        if (r.report_date !== lastDate) {
-          lastDate = r.report_date;
-          const c = data.filter(d => d.report_date === lastDate).length;
-          html += `<tr class="dr-date-row"><td colspan="8">${escHtml(lastDate)}（${c} 筆）</td></tr>`;
+      visits.forEach(({ v, ref }) => {
+        if (ref.report_date !== lastDate) {
+          lastDate = ref.report_date;
+          html += `<tr class="dr-date-row"><td colspan="9">${escHtml(lastDate)}（${perDate[lastDate]} 筆）</td></tr>`;
         }
-        const gps = r.gps_latitude ? `${Number(r.gps_latitude).toFixed(5)}<br>${Number(r.gps_longitude).toFixed(5)}` : '-';
+        const gps = ref.gps_latitude ? `${Number(ref.gps_latitude).toFixed(5)}<br>${Number(ref.gps_longitude).toFixed(5)}` : '-';
+        const inT = v.start ? escHtml(v.start.report_time || '') : '—';
+        const loc = escHtml((v.start && v.start.location) || (v.end && v.end.location) || '-');
         html += `<tr>
-          <td>${escHtml(r.report_time || '')}</td>
-          <td>${escHtml(r.display_name || '')}</td>
-          <td>${escHtml(r.company_name || '-')}</td>
-          <td>${escHtml(r.group_name || '-')}</td>
-          <td>${escHtml(r.task_type || '')}</td>
-          <td>${escHtml(r.location || '-')}</td>
-          <td>${escHtml(r.task_description || '-')}</td>
+          <td>${escHtml(ref.display_name || '')}</td>
+          <td>${escHtml(ref.company_name || '-')}</td>
+          <td>${escHtml(ref.group_name || '-')}</td>
+          <td>${inT}</td>
+          <td>${leaveCellHtml(v)}</td>
+          <td>${escHtml(fmtDuration(v.start, v.end))}</td>
+          <td>${loc}</td>
+          <td>${escHtml(mergeDesc(v.start, v.end))}</td>
           <td class="dr-gps">${gps}</td>
         </tr>`;
       });
