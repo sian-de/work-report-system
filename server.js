@@ -674,6 +674,17 @@ app.post('/api/submit-report', requireAuth, async (req, res) => {
   const tw = getTaiwanTime();
 
   try {
+    // 防重複：該員最新一筆已是「離開」且在 60 秒內，再送「離開」視為重複（連按、一鍵離開與離開鈕同時送出），不新增
+    if (taskType === '離開') {
+      const last = await db.execute({
+        sql: "SELECT task_type, CAST(strftime('%s','now') AS INTEGER) - CAST(strftime('%s', created_at) AS INTEGER) AS age FROM reports WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+        args: [userId],
+      });
+      const l = last.rows[0];
+      if (l && l.task_type === '離開' && Number(l.age) < 60) {
+        return res.json({ success: true, duplicate: true, message: '已記錄離開' });
+      }
+    }
     await db.execute({
       sql: `INSERT INTO reports (user_id, display_name, group_id, report_date, report_time, task_type, location, task_description, gps_latitude, gps_longitude)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

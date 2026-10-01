@@ -191,3 +191,20 @@ test('狀態板：最後回報取最新一筆（不論有無 GPS），同秒多�
 test('刪除仍有人員的公司 → 400', async () => {
   assert.equal((await api('DELETE', '/api/companies/' + A, { token: adminToken })).status, 400);
 });
+
+test('60 秒內重複送出「離開」只記一筆；中間有到達則不算重複', async () => {
+  const reg = await api('POST', '/api/register', { body: { username: 'dup_user', password: 'test1234', displayName: '重複測試' } });
+  assert.equal(reg.status, 200);
+  const tk = reg.data.token;
+  const count = async () => (await api('GET', '/api/my-reports?limit=0', { token: tk })).data.data.length;
+  assert.equal((await api('POST', '/api/submit-report', { token: tk, body: { taskType: '到達', location: 'X', task: 'y' } })).status, 200);
+  assert.equal((await api('POST', '/api/submit-report', { token: tk, body: { taskType: '離開' } })).status, 200);
+  const dup = await api('POST', '/api/submit-report', { token: tk, body: { taskType: '離開' } });
+  assert.equal(dup.status, 200);
+  assert.equal(dup.data.duplicate, true);
+  assert.equal(await count(), 2, '重複的離開不應新增');
+  await api('POST', '/api/submit-report', { token: tk, body: { taskType: '到達', location: 'Z', task: 'w' } });
+  const leave2 = await api('POST', '/api/submit-report', { token: tk, body: { taskType: '離開' } });
+  assert.equal(leave2.data.duplicate, undefined);
+  assert.equal(await count(), 4, '新到達之後的離開要正常記錄');
+});

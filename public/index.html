@@ -1452,21 +1452,43 @@
     }
 
     // 將「到達↔離開、隨車上車↔下車」配成一列「訪點」（含未配對的孤兒）
+    // 排序：日期＋分鐘為主，同一分鐘內以建立時間（秒）、id 決定先後，避免「離開/到達」同分鐘被排反。
+    // 配對規則：離開只配「12 小時內」最近的未離開到達（隔天的離開不會去配前一天沒離開的）；
+    //          同一人 60 秒內、中間沒有新到達就重複送出的「離開」只算一筆。
     function pairVisits(reports) {
       const key = r => r.report_date + ' ' + (r.report_time || '');
-      const sorted = [...reports].sort((a, b) => key(a).localeCompare(key(b)));
+      const ts = r => { const t = Date.parse(String(r.created_at || '').replace(' ', 'T') + 'Z'); return isNaN(t) ? 0 : t; };
+      const at = r => new Date(r.report_date + 'T' + (r.report_time || '00:00') + ':00').getTime();
+      const cmp = (a, b) => key(a).localeCompare(key(b)) || ts(a) - ts(b) || (a.id || 0) - (b.id || 0);
+      const MAX_STAY_MS = 12 * 3600 * 1000;
+      const sorted = [...reports].sort(cmp);
       const visits = [];
       const openArr = [], openRide = [];
+      const pop = (open, r) => {
+        for (let i = open.length - 1; i >= 0; i--) {
+          const s = visits[open[i]].start;
+          const d = at(r) - at(s);
+          if (d >= 0 && d <= MAX_STAY_MS) return open.splice(i, 1)[0];
+        }
+        return -1;
+      };
+      let lastLeaveTs = 0, arrivedSinceLeave = false;
       for (const r of sorted) {
         const t = r.task_type;
-        if (t === '到達') { visits.push({ kind: '到達', start: r, end: null }); openArr.push(visits.length - 1); }
-        else if (t === '隨車(上車)') { visits.push({ kind: '隨車', start: r, end: null }); openRide.push(visits.length - 1); }
-        else if (t === '離開') { if (openArr.length) visits[openArr.pop()].end = r; else visits.push({ kind: '到達', start: null, end: r }); }
-        else if (t === '隨車(下車)') { if (openRide.length) visits[openRide.pop()].end = r; else visits.push({ kind: '隨車', start: null, end: r }); }
+        if (t === '到達') { visits.push({ kind: '到達', start: r, end: null }); openArr.push(visits.length - 1); arrivedSinceLeave = true; }
+        else if (t === '隨車(上車)') { visits.push({ kind: '隨車', start: r, end: null }); openRide.push(visits.length - 1); arrivedSinceLeave = true; }
+        else if (t === '離開') {
+          const cur = ts(r);
+          if (!arrivedSinceLeave && lastLeaveTs && cur && cur - lastLeaveTs < 60000) continue; // 兩次離開之間沒有新到達、且相隔 60 秒內＝重複送出
+          lastLeaveTs = cur; arrivedSinceLeave = false;
+          const i = pop(openArr, r);
+          if (i >= 0) visits[i].end = r; else visits.push({ kind: '到達', start: null, end: r });
+        }
+        else if (t === '隨車(下車)') { const i = pop(openRide, r); if (i >= 0) visits[i].end = r; else visits.push({ kind: '隨車', start: null, end: r }); }
         else { visits.push({ kind: t || '其他', start: r, end: null }); }
       }
-      const refKey = v => key(v.start || v.end);
-      return visits.sort((a, b) => refKey(a).localeCompare(refKey(b)));
+      const ref = v => v.start || v.end;
+      return visits.sort((a, b) => cmp(ref(a), ref(b)));
     }
     function fmtDuration(start, end) {
       if (!start || !end) return '—';
